@@ -122,23 +122,36 @@ class StatusIndicator(Component):
         # If the name + status couldn't fit even as truncated 3-char
         # words, drop the status: the icon's color already conveys the
         # state and a readable name is more useful than a truncated state.
-        font_small = ctx.get_font("small")
         font_bold = ctx.get_font("small", bold=True)
         icon_w = (icon_size + 6) if self.icon else 0
         inner_w = width - padding * 2 - icon_w
         status_w, _ = ctx.get_text_size(status_text, font_bold)
-        name_w, _ = ctx.get_text_size(self.name, font_small)
-        show_status = self.show_status_text and status_w + 24 <= inner_w  # 24px = "name…" minimum
+        # 24px ≈ "name…" minimum readable width for the name on the left.
+        show_status = self.show_status_text and status_w + 24 <= inner_w
 
         children: list[Component] = []
         if self.icon:
             children.append(Icon(name=self.icon, size=icon_size, color=color))
         children.append(
-            Text(text=self.name, font="small", color=THEME_TEXT_PRIMARY, align="start", truncate=True)
+            Text(
+                text=self.name,
+                font="small",
+                color=THEME_TEXT_PRIMARY,
+                align="start",
+                truncate=True,
+            )
         )
         if show_status:
             children.append(Spacer())
-            children.append(Text(text=status_text, font="small", color=color, align="end", bold=True))
+            children.append(
+                Text(
+                    text=status_text,
+                    font="small",
+                    color=color,
+                    align="end",
+                    bold=True,
+                )
+            )
 
         # Render as a row
         Row(
