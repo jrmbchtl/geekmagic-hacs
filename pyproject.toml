@@ -4,13 +4,12 @@ version = "1.0.0"
 description = "Home Assistant custom integration for GeekMagic displays"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.14"
+requires-python = ">=3.14.2"
 authors = [{ name = "Adrien Brault" }]
 dependencies = [
     "pillow>=10.0.0",
     "aiohttp>=3.8.0",
     "palettable>=3.3.0",
-    "stretchable>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -119,6 +118,9 @@ ignore = [
 ]
 "scripts/**/*.py" = [
     "PLC0415", # inline imports for local imports
+]
+"custom_components/geekmagic/widgets/_flex.py" = [
+    "SLF001", # intra-class access between Node instances is fine
 ]
 "custom_components/geekmagic/widgets/component_helpers.py" = [
     "N802", # PascalCase for component factory functions (React-style)

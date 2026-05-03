@@ -19,13 +19,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from stretchable import Edge, Node
-from stretchable.style import (
+from ._flex import (
     AUTO,
     PCT,
     AlignItems,
+    Edge,
     FlexDirection,
     JustifyContent,
+    Node,
 )
 
 if TYPE_CHECKING:
