@@ -508,10 +508,10 @@ class Row(Component):
             box = node.get_box(Edge.CONTENT)
             child.render(
                 ctx,
-                inner_x + int(box.x),
-                inner_y + int(box.y),
-                int(box.width),
-                int(box.height),
+                inner_x + round(box.x),
+                inner_y + round(box.y),
+                round(box.width),
+                round(box.height),
             )
 
 
@@ -584,10 +584,10 @@ class Column(Component):
             box = node.get_box(Edge.CONTENT)
             child.render(
                 ctx,
-                inner_x + int(box.x),
-                inner_y + int(box.y),
-                int(box.width),
-                int(box.height),
+                inner_x + round(box.x),
+                inner_y + round(box.y),
+                round(box.width),
+                round(box.height),
             )
 
 

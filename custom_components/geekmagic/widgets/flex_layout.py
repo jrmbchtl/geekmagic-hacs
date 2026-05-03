@@ -100,10 +100,10 @@ def create_vertical_layout(
         node = root.find(f"/{name}")
         box = node.get_box(Edge.CONTENT)
         result[name] = LayoutBox(
-            x=int(box.x),
-            y=int(box.y),
-            width=int(box.width),
-            height=int(box.height),
+            x=round(box.x),
+            y=round(box.y),
+            width=round(box.width),
+            height=round(box.height),
         )
 
     return result
@@ -151,10 +151,10 @@ def create_horizontal_layout(
         node = root.find(f"/{name}")
         box = node.get_box(Edge.CONTENT)
         result[name] = LayoutBox(
-            x=int(box.x),
-            y=int(box.y),
-            width=int(box.width),
-            height=int(box.height),
+            x=round(box.x),
+            y=round(box.y),
+            width=round(box.width),
+            height=round(box.height),
         )
 
     return result
