@@ -5,12 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..const import (
-    COLOR_BLUE,
-    COLOR_CYAN,
-    COLOR_GRAY,
-    COLOR_ORANGE,
-)
 from ..render_context import SizeCategory, get_size_category
 from .base import Widget, WidgetConfig
 from .components import (
@@ -22,6 +16,16 @@ from .components import (
     Row,
     Text,
 )
+from .theme import (
+    SYSTEM_BLUE,
+    SYSTEM_CYAN,
+    SYSTEM_MINT,
+    SYSTEM_ORANGE,
+    SYSTEM_RED,
+)
+
+# Local convenience for muted gray that picks up theme.muted at render time.
+_MUTED = (105, 105, 105)
 
 if TYPE_CHECKING:
     from ..render_context import RenderContext
@@ -50,26 +54,26 @@ HVAC_MODE_ICONS = {
     "off": "power-standby",
 }
 
-# HVAC action colors
+# HVAC action colors (watchOS system colors)
 HVAC_ACTION_COLORS = {
-    "heating": COLOR_ORANGE,
-    "cooling": COLOR_BLUE,
-    "idle": COLOR_GRAY,
-    "off": COLOR_GRAY,
-    "drying": COLOR_CYAN,
-    "fan": COLOR_CYAN,
-    "preheating": COLOR_ORANGE,
+    "heating": SYSTEM_ORANGE,
+    "cooling": SYSTEM_BLUE,
+    "idle": _MUTED,
+    "off": _MUTED,
+    "drying": SYSTEM_CYAN,
+    "fan": SYSTEM_MINT,
+    "preheating": SYSTEM_RED,
 }
 
 # HVAC mode colors
 HVAC_MODE_COLORS = {
-    "heat": COLOR_ORANGE,
-    "cool": COLOR_BLUE,
-    "heat_cool": COLOR_CYAN,
-    "auto": COLOR_CYAN,
-    "dry": COLOR_CYAN,
-    "fan_only": COLOR_CYAN,
-    "off": COLOR_GRAY,
+    "heat": SYSTEM_ORANGE,
+    "cool": SYSTEM_BLUE,
+    "heat_cool": SYSTEM_CYAN,
+    "auto": SYSTEM_CYAN,
+    "dry": SYSTEM_CYAN,
+    "fan_only": SYSTEM_MINT,
+    "off": _MUTED,
 }
 
 
@@ -124,13 +128,12 @@ class ClimateDisplay(Component):
 
     def _get_icon_and_color(self) -> tuple[str, tuple[int, int, int]]:
         """Get icon and color based on hvac_action or hvac_mode."""
-        # Prefer action over mode if available
         if self.hvac_action and self.hvac_action != "idle":
             icon = HVAC_ACTION_ICONS.get(self.hvac_action, "thermostat")
-            color = HVAC_ACTION_COLORS.get(self.hvac_action, COLOR_CYAN)
+            color = HVAC_ACTION_COLORS.get(self.hvac_action, SYSTEM_CYAN)
         else:
             icon = HVAC_MODE_ICONS.get(self.hvac_mode, "thermostat")
-            color = HVAC_MODE_COLORS.get(self.hvac_mode, COLOR_CYAN)
+            color = HVAC_MODE_COLORS.get(self.hvac_mode, SYSTEM_CYAN)
         return icon, color
 
     def _build_full(self, ctx: RenderContext, width: int, height: int) -> Component:
@@ -147,7 +150,7 @@ class ClimateDisplay(Component):
         # Build main column with icon and current temp
         main_children: list[Component] = [
             Icon(icon_name, size=icon_size, color=color),
-            Text(current_str, font="huge", color=THEME_TEXT_PRIMARY),
+            Text(current_str, font="huge", bold=True, color=color),
         ]
 
         # Add target temperature if enabled and available
@@ -184,8 +187,8 @@ class ClimateDisplay(Component):
                 bottom_children.append(
                     Row(
                         children=[
-                            Icon("water-percent", size=humidity_icon_size, color=COLOR_CYAN),
-                            Text(f"{humidity_val}%", font="small", color=COLOR_CYAN),
+                            Icon("water-percent", size=humidity_icon_size, color=SYSTEM_CYAN),
+                            Text(f"{humidity_val}%", font="small", color=SYSTEM_CYAN),
                         ],
                         gap=6,
                         align="center",
@@ -238,7 +241,7 @@ class ClimateDisplay(Component):
 
             main_children: list[Component] = [
                 Icon(icon_name, size=icon_size, color=color),
-                Text(current_str, font="xlarge", color=THEME_TEXT_PRIMARY),
+                Text(current_str, font="xlarge", bold=True, color=color),
             ]
 
             # Add target temperature
@@ -263,8 +266,8 @@ class ClimateDisplay(Component):
                     main_children.append(
                         Row(
                             children=[
-                                Icon("water-percent", size=12, color=COLOR_CYAN),
-                                Text(f"{humidity_val}%", font="small", color=COLOR_CYAN),
+                                Icon("water-percent", size=12, color=SYSTEM_CYAN),
+                                Text(f"{humidity_val}%", font="small", color=SYSTEM_CYAN),
                             ],
                             gap=4,
                             align="center",
@@ -301,7 +304,7 @@ class ClimateDisplay(Component):
         top_row = Row(
             children=[
                 Icon(icon_name, size=icon_size, color=color),
-                Text(current_str, font="large", color=THEME_TEXT_PRIMARY),
+                Text(current_str, font="large", bold=True, color=color),
             ],
             gap=int(width * 0.04),
             align="center",
@@ -335,8 +338,8 @@ class ClimateDisplay(Component):
                     row1_parts.append(
                         Row(
                             children=[
-                                Icon("water-percent", size=10, color=COLOR_CYAN),
-                                Text(f"{humidity_val}%", font="tiny", color=COLOR_CYAN),
+                                Icon("water-percent", size=10, color=SYSTEM_CYAN),
+                                Text(f"{humidity_val}%", font="tiny", color=SYSTEM_CYAN),
                             ],
                             gap=2,
                             align="center",
@@ -386,8 +389,8 @@ class ClimateDisplay(Component):
                     bottom_parts.append(
                         Row(
                             children=[
-                                Icon("water-percent", size=10, color=COLOR_CYAN),
-                                Text(f"{humidity_val}%", font="tiny", color=COLOR_CYAN),
+                                Icon("water-percent", size=10, color=SYSTEM_CYAN),
+                                Text(f"{humidity_val}%", font="tiny", color=SYSTEM_CYAN),
                             ],
                             gap=2,
                             align="center",
@@ -467,8 +470,8 @@ class ClimateDisplay(Component):
                     detail_parts.append(
                         Row(
                             children=[
-                                Icon("water-percent", size=8, color=COLOR_CYAN),
-                                Text(f"{humidity_val}%", font="tiny", color=COLOR_CYAN),
+                                Icon("water-percent", size=8, color=SYSTEM_CYAN),
+                                Text(f"{humidity_val}%", font="tiny", color=SYSTEM_CYAN),
                             ],
                             gap=2,
                             align="center",

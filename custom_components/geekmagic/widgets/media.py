@@ -109,10 +109,14 @@ class ImageFill(Component):
 
 @dataclass
 class DarkOverlay(Component):
-    """Dark overlay that sits at the bottom portion of its container."""
+    """Soft fade-to-black overlay at the bottom of the container.
 
-    height_ratio: float = 0.35  # Portion of height to cover
-    color: Color = (10, 10, 10)
+    Renders as a smooth gradient (transparent at the top of the overlay,
+    fully opaque at the bottom) so album art shows through gracefully.
+    """
+
+    height_ratio: float = 0.45
+    color: Color = (0, 0, 0)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         return (max_width, max_height)
@@ -120,7 +124,9 @@ class DarkOverlay(Component):
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         overlay_height = int(height * self.height_ratio)
         overlay_y = y + height - overlay_height
-        ctx.draw_rect((x, overlay_y, x + width, y + height), fill=self.color)
+        ctx.draw_gradient_fade(
+            (x, overlay_y, x + width, y + height), color=self.color, direction="down"
+        )
 
 
 @dataclass
@@ -158,13 +164,14 @@ class AlbumArt(Component):
         show_artist = size in (SizeCategory.MEDIUM, SizeCategory.LARGE)
         show_time = size == SizeCategory.LARGE
 
-        # Overlay ratio varies by size - smaller for small cells
+        # Overlay ratio: gradient extends slightly higher to give the text
+        # room to breathe over the album art (watchOS now-playing pattern).
         if is_micro:
-            overlay_ratio = 0.28  # Minimal overlay for micro
+            overlay_ratio = 0.45
         elif is_compact:
-            overlay_ratio = 0.30
+            overlay_ratio = 0.50
         else:
-            overlay_ratio = 0.28
+            overlay_ratio = 0.55
 
         # Layer 2: Dark overlay at bottom
         DarkOverlay(height_ratio=overlay_ratio).render(ctx, x, y, width, height)
@@ -247,11 +254,10 @@ class AlbumArt(Component):
             bar_height = max(2, int(height * 0.015))
             bar_y = y + height - bar_height
 
-            # Use Bar component
+            # Tinted track via theme (Activity-bar style).
             Bar(
                 percent=progress,
                 color=self.color,
-                background=(40, 40, 40),
                 height=bar_height,
             ).render(ctx, x, bar_y, width, bar_height)
 

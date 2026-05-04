@@ -983,6 +983,62 @@ class Renderer:
             int(color1[2] + (color2[2] - color1[2]) * factor),
         )
 
+    def draw_gradient_fade(
+        self,
+        draw: ImageDraw.ImageDraw,
+        rect: tuple[int, int, int, int],
+        color: tuple[int, int, int] = COLOR_BLACK,
+        direction: str = "down",
+        steps: int | None = None,
+    ) -> None:
+        """Draw a vertical alpha-faded gradient over an area.
+
+        Renders by alpha-compositing an RGBA overlay onto the canvas so the
+        underlying image (e.g. album art) shows through the top of the
+        gradient. Used for the watchOS now-playing fade.
+
+        Args:
+            draw: ImageDraw whose underlying image will be modified in place
+            rect: (x1, y1, x2, y2) area in unscaled coords
+            color: Gradient color (typically black)
+            direction: "down" → transparent at top, opaque at bottom
+                       "up"   → opaque at top, transparent at bottom
+            steps: Number of gradient steps (default 32)
+        """
+        x1, y1, x2, y2 = self._scale_rect(rect)
+        canvas: Image.Image = draw._image  # noqa: SLF001
+        w = max(1, x2 - x1)
+        h = max(1, y2 - y1)
+        if w <= 0 or h <= 0:
+            return
+
+        # Build an RGBA gradient overlay with alpha 0..255 along the axis.
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        n = steps or max(8, h // 4)
+        n = max(2, n)
+
+        # Switch canvas mode if needed (we modify draw._image in place).
+        if canvas.mode != "RGBA":
+            canvas_rgba = canvas.convert("RGBA")
+        else:
+            canvas_rgba = canvas
+
+        for i in range(n):
+            t = i / (n - 1)  # 0..1
+            alpha = int(255 * (t if direction == "down" else 1 - t))
+            row_y1 = int(h * i / n)
+            row_y2 = int(h * (i + 1) / n)
+            ImageDraw.Draw(overlay).rectangle(
+                (0, row_y1, w, row_y2),
+                fill=(color[0], color[1], color[2], alpha),
+            )
+
+        canvas_rgba.alpha_composite(overlay, dest=(x1, y1))
+
+        if canvas.mode != "RGBA":
+            # Write the composited result back to the original RGB image.
+            canvas.paste(canvas_rgba.convert("RGB"))
+
     def tint_at(
         self,
         color: tuple[int, int, int],

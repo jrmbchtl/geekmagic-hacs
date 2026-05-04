@@ -644,6 +644,26 @@ class RenderContext:
         abs_xy = [self._abs_point(*p) for p in xy]
         self._renderer.draw_line(self._draw, abs_xy, fill=fill, width=width)
 
+    def draw_gradient_fade(
+        self,
+        rect: tuple[int, int, int, int],
+        color: tuple[int, int, int] = (0, 0, 0),
+        direction: str = "down",
+    ) -> None:
+        """Draw a vertical alpha-faded gradient onto the canvas.
+
+        Used for watchOS-style soft fades over album art / images.
+
+        Args:
+            rect: (x1, y1, x2, y2) in local coordinates
+            color: Gradient color (typically black)
+            direction: "down" (transparent → opaque) or "up" (opaque → transparent)
+        """
+        abs_rect = self._abs_rect(rect)
+        self._renderer.draw_gradient_fade(
+            self._draw, abs_rect, color=color, direction=direction
+        )
+
     def draw_image(
         self,
         source: Image.Image,  # type: ignore[name-defined]
