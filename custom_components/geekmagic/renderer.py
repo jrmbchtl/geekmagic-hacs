@@ -616,23 +616,24 @@ class Renderer:
         # Convert to integer tuples
         int_points = [(int(p[0]), int(p[1])) for p in points]
 
-        # Draw filled area
+        # Draw filled area — soft tint of the line color (watchOS-style).
         if fill:
             fill_points = [(x1, y2), *int_points, (x2, y2)]
             if gradient:
-                # Gradient: blend between cool (blue) for low values and warm (orange) for high
-                # Use the average normalized value to pick a blend
+                # Gradient: blend between cool (blue) for low values and warm
+                # (orange) for high. Compose at ~28% opacity over black for a
+                # softer, cohesive watchOS-style look.
                 avg_normalized = sum((v - min_val) / range_val for v in data) / len(data)
-                # Cool: (70, 130, 180) - Steel blue
-                # Warm: (255, 140, 0) - Dark orange
-                fill_color = (
-                    int(70 + (255 - 70) * avg_normalized) // 3,
-                    int(130 + (140 - 130) * avg_normalized) // 3,
-                    int(180 + (0 - 180) * avg_normalized) // 3,
+                blended = (
+                    int(70 + (255 - 70) * avg_normalized),
+                    int(130 + (140 - 130) * avg_normalized),
+                    int(180 + (0 - 180) * avg_normalized),
                 )
+                fill_color = self.tint_at(blended, 0.32)
             else:
-                # Fill with ~35% opacity of line color for visible but subtle effect
-                fill_color = (color[0] // 3, color[1] // 3, color[2] // 3)
+                # ~28% tint over black (compatible with the theme's
+                # tinted-track aesthetic)
+                fill_color = self.tint_at(color, 0.28)
             draw.polygon(fill_points, fill=fill_color)
 
         # Draw line

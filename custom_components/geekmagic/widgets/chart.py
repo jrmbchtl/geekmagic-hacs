@@ -140,7 +140,7 @@ class ChartWidget(Widget):
                 "label": "Show Min/Max Range",
                 "default": True,
             },
-            {"key": "fill", "type": "boolean", "label": "Fill Area", "default": False},
+            {"key": "fill", "type": "boolean", "label": "Fill Area", "default": True},
             {
                 "key": "color_gradient",
                 "type": "boolean",
