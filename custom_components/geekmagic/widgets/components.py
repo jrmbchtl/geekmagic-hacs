@@ -256,12 +256,14 @@ class Icon(Component):
 class Bar(Component):
     """Horizontal progress bar component.
 
-    When background is None, uses theme-appropriate dark color.
+    When background is None, the track is tinted (a soft mix of the bar color
+    over the theme background) — watchOS Activity-bar style. Themes can opt
+    out by setting Theme.tint_track=False.
     """
 
     percent: float
     color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme-aware dark color
+    background: Color | None = None  # None = use theme-aware tinted track
     height: int | None = None  # None = use default relative to container
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
@@ -269,19 +271,22 @@ class Bar(Component):
         return (max_width, h)
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        # Use theme bar_background if not specified
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
         ctx.draw_bar((x, y, x + width, y + height), self.percent, self.color, bg)
 
 
 @dataclass
 class Ring(Component):
-    """Circular ring gauge component."""
+    """Circular ring gauge component (Apple Activity-ring style).
+
+    When `background` is None and the theme has tint_track enabled, the
+    track is rendered as a soft tint of the ring color (watchOS look).
+    """
 
     percent: float
     color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme.bar_background
-    thickness: int | None = None  # None = auto-calculate
+    background: Color | None = None  # None = use theme tinted track
+    thickness: int | None = None  # None = auto-calculate (Activity-ring proportions)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         size = min(max_width, max_height)
@@ -291,8 +296,9 @@ class Ring(Component):
         size = min(width, height)
         radius = size // 2
         center = (x + width // 2, y + height // 2)
-        thickness = self.thickness or max(4, radius // 5)
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        # Activity-ring proportions: ~14% of the ring radius, with a 5px floor.
+        thickness = self.thickness or max(5, int(radius * 0.14))
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
         ctx.draw_ring_gauge(
             center,
             radius - thickness,
@@ -305,12 +311,15 @@ class Ring(Component):
 
 @dataclass
 class Arc(Component):
-    """Arc gauge component (270-degree arc)."""
+    """Arc gauge component (270-degree arc).
+
+    Tinted track by default when the theme allows.
+    """
 
     percent: float
     color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme.bar_background
-    width: int = 8
+    background: Color | None = None  # None = use theme tinted track
+    width: int | None = None  # None = auto-calculate from size
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         size = min(max_width, max_height)
@@ -320,13 +329,15 @@ class Arc(Component):
         size = min(width, height)
         cx, cy = x + width // 2, y + height // 2
         half = size // 2
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
+        # Auto thickness scales with arc radius, similar to ring proportions.
+        stroke = self.width if self.width is not None else max(5, int(half * 0.13))
         ctx.draw_arc(
             (cx - half, cy - half, cx + half, cy + half),
             self.percent,
             self.color,
             bg,
-            self.width,
+            stroke,
         )
 
 
