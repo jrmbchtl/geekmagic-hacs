@@ -50,6 +50,16 @@ class GaugeWidget(Widget):
                 "options": ["bar", "ring", "arc"],
                 "default": "bar",
             },
+            {
+                # Only meaningful when style="bar". Auto picks based on
+                # cell shape (vertical for tall+narrow, stacked for
+                # square hero cells, compact for everything else).
+                "key": "orientation",
+                "type": "select",
+                "label": "Bar Orientation",
+                "options": ["auto", "compact", "stacked", "vertical"],
+                "default": "auto",
+            },
             {"key": "min", "type": "number", "label": "Minimum", "default": 0},
             {"key": "max", "type": "number", "label": "Maximum", "default": 100},
             {"key": "unit", "type": "text", "label": "Unit Override"},
@@ -64,6 +74,8 @@ class GaugeWidget(Widget):
         """Initialize the gauge widget."""
         super().__init__(config)
         self.style = config.options.get("style", "bar")  # bar, ring, arc
+        # auto / compact / stacked / vertical — only meaningful for bar style.
+        self.orientation = config.options.get("orientation", "auto")
         self.min_value = config.options.get("min", 0)
         self.max_value = config.options.get("max", 100)
         self.icon = config.options.get("icon")
@@ -134,4 +146,5 @@ class GaugeWidget(Widget):
             label=name,
             color=color,
             icon=self.icon,
+            mode=self.orientation,
         )
