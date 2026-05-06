@@ -177,9 +177,11 @@ handle the same thing — they're the canonical references.
 ### Goals
 
 1. **Information density first.** A 240×240 cell is tiny. Use every pixel —
-   `justify="space-between"` to spread content top-to-bottom; never leave the
-   bottom half of a cell empty if there's data to show. Three-band layout
-   (caption / hero / supporting strip) is the default for cells ≥100×100.
+   `justify="space-evenly"` to spread content top-to-bottom (equal gaps
+   before/between/after each band reads more balanced than pinning the
+   first/last items flush to the cell edges). Never leave the bottom half
+   of a cell empty if there's data to show. Three-band layout (caption /
+   hero / supporting strip) is the default for cells ≥100×100.
 2. **Hierarchy via size + weight + colour.** A glance must surface the
    primary metric instantly: bold + large for the hero, secondary for
    supporting data, tertiary for captions. Don't make everything the same

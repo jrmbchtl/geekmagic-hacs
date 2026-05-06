@@ -117,13 +117,16 @@ class ProgressDisplay(Component):
         label_text = self.label.upper()
 
         if is_expanded:
-            # Expanded watchOS-style hierarchy:
-            #   Row 1: caps label (caption tier)
-            #   Row 2: HERO percentage (big, bold, white) — short and
-            #          glanceable. The verbose '8.5k/10k steps' detail
-            #          would auto-fit-shrink to a tiny font in 2x2 cells;
-            #          using "85%" keeps the hero substantial.
-            #   Row 3: bar + value/target detail
+            # Expanded watchOS-style hierarchy — four bands top-to-bottom,
+            # each on its own line so the visual elements never compete:
+            #   Row 1: icon + caps label (caption tier)
+            #   Row 2: HERO percentage (big bold white — glanceable)
+            #   Row 3: value/target detail (e.g. "8.5k/10k steps")
+            #   Row 4: bar (full width, alone on its row)
+            # Pulling the bar onto its own line — instead of riding next
+            # to the detail text — gives it the full cell width to read
+            # cleanly as a progress indicator. The detail text reads as
+            # quiet supporting info above it.
             icon_size = max(16, int(height * 0.18))
 
             # Row 1: Icon + Label (centered)
@@ -158,8 +161,24 @@ class ProgressDisplay(Component):
                 padding=padding,
             )
 
-            # Row 3: bar + value/target detail (e.g. "8.5k/10k steps").
-            # Detail is the secondary info to the hero %.
+            # Row 3: value/target detail text — small caption tier above
+            # the bar so the bar can run the full width of the cell.
+            detail_row = Row(
+                children=[
+                    Text(
+                        text=value_text,
+                        font="small",
+                        color=THEME_TEXT_SECONDARY,
+                        align="center",
+                        truncate=True,
+                        auto_fit=True,
+                    )
+                ],
+                justify="center",
+                padding=padding,
+            )
+
+            # Row 4: bar — alone on its own line, full width.
             bar_row = Row(
                 children=[
                     Flex(
@@ -169,15 +188,7 @@ class ProgressDisplay(Component):
                             height=bar_height,
                         )
                     ),
-                    Text(
-                        text=value_text,
-                        font="small",
-                        color=THEME_TEXT_SECONDARY,
-                        align="end",
-                        auto_fit=True,
-                    ),
                 ],
-                gap=8,
                 align="center",
                 padding=padding,
             )
@@ -186,10 +197,11 @@ class ProgressDisplay(Component):
                 children=[
                     Row(children=header_children, gap=6, justify="center", padding=padding),
                     value_row,
+                    detail_row,
                     bar_row,
                 ],
-                gap=int(height * 0.06),
-                justify="center",
+                gap=int(height * 0.04),
+                justify="space-evenly",
                 align="stretch",
             ).render(ctx, x, y, width, height)
 
