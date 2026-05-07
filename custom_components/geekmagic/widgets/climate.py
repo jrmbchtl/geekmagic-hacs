@@ -152,6 +152,17 @@ class ClimateDisplay(Component):
             return None
         return text.replace("_", " ").upper()
 
+    def _chip(self, icon: str, text: str, color: Color, icon_size: int, font: str) -> Component:
+        """Build an icon+text chip (humidity, target temp)."""
+        return Row(
+            children=[
+                Icon(icon, size=icon_size, color=color),
+                Text(text, font=font, color=color),
+            ],
+            gap=4,
+            align="center",
+        )
+
     def _humidity_chip(self, icon_size: int, font: str = "small") -> Component | None:
         """Build a humidity icon+value chip, or None if disabled/unset."""
         if not self.show_humidity or self.humidity is None:
@@ -160,27 +171,14 @@ class ClimateDisplay(Component):
             humidity_val = int(float(self.humidity))
         except (ValueError, TypeError):
             return None
-        return Row(
-            children=[
-                Icon("water-percent", size=icon_size, color=THEME_INFO),
-                Text(f"{humidity_val}%", font=font, color=THEME_INFO),
-            ],
-            gap=4,
-            align="center",
-        )
+        return self._chip("water-percent", f"{humidity_val}%", THEME_INFO, icon_size, font)
 
     def _target_chip(self, icon_size: int, font: str = "small") -> Component | None:
         """Build a target-temperature chip, or None if disabled/unset."""
         if not self.show_target or self.target_temp is None:
             return None
-        target_str = _format_temp(self.target_temp)
-        return Row(
-            children=[
-                Icon("target", size=icon_size, color=THEME_TEXT_SECONDARY),
-                Text(target_str, font=font, color=THEME_TEXT_SECONDARY),
-            ],
-            gap=4,
-            align="center",
+        return self._chip(
+            "target", _format_temp(self.target_temp), THEME_TEXT_SECONDARY, icon_size, font
         )
 
     def _build_full(self, ctx: RenderContext, width: int, height: int) -> Component:

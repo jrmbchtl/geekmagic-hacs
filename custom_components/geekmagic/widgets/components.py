@@ -187,12 +187,12 @@ class Text(Component):
 
     def _pick_font(self, ctx: RenderContext, max_width: int):
         """Return the largest font in the shrink chain that fits the text."""
-        for name in self._resolved_font_chain():
+        chain = self._resolved_font_chain()
+        for name in chain:
             f = ctx.get_font(name, bold=self.bold)
-            w, _ = ctx.get_text_size(self.text, f)
-            if w <= max_width:
+            if ctx.get_text_size(self.text, f)[0] <= max_width:
                 return f
-        return ctx.get_font(self._resolved_font_chain()[-1], bold=self.bold)
+        return ctx.get_font(chain[-1], bold=self.bold)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         if self.auto_fit:
