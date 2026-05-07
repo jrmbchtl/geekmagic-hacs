@@ -223,12 +223,16 @@ class TestThemeColorSentinels:
         def draw_line(_draw, _xy, *, fill=None, width=1):
             captured["line_fill"] = fill
 
+        def draw_gradient_fade(_draw, _rect, *, color, direction="down"):
+            captured["gradient_color"] = color
+
         monkeypatch.setattr(render_ctx._renderer, "draw_rect", draw_rect)
         monkeypatch.setattr(render_ctx._renderer, "draw_rounded_rect", draw_rounded_rect)
         monkeypatch.setattr(render_ctx._renderer, "draw_panel", draw_panel)
         monkeypatch.setattr(render_ctx._renderer, "draw_timeline_bar", draw_timeline_bar)
         monkeypatch.setattr(render_ctx._renderer, "draw_ellipse", draw_ellipse)
         monkeypatch.setattr(render_ctx._renderer, "draw_line", draw_line)
+        monkeypatch.setattr(render_ctx._renderer, "draw_gradient_fade", draw_gradient_fade)
 
         render_ctx.draw_rect((0, 0, 1, 1), fill=THEME_PRIMARY, outline=THEME_WARNING)
         render_ctx.draw_rounded_rect((0, 0, 1, 1), fill=THEME_SUCCESS, outline=THEME_ERROR)
@@ -238,6 +242,7 @@ class TestThemeColorSentinels:
         )
         render_ctx.draw_ellipse((0, 0, 1, 1), fill=THEME_SECONDARY, outline=THEME_PRIMARY)
         render_ctx.draw_line([(0, 0), (1, 1)], fill=THEME_TEXT_TERTIARY)
+        render_ctx.draw_gradient_fade((0, 0, 1, 1), color=THEME_MUTED)
 
         assert captured == {
             "rect_fill": THEME_WATCHOS.primary,
@@ -251,6 +256,7 @@ class TestThemeColorSentinels:
             "ellipse_fill": THEME_WATCHOS.secondary,
             "ellipse_outline": THEME_WATCHOS.primary,
             "line_fill": THEME_WATCHOS.text_tertiary,
+            "gradient_color": THEME_WATCHOS.muted,
         }
 
     def test_concrete_color_passes_through_unchanged(self) -> None:

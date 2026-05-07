@@ -625,7 +625,12 @@ class RenderContext:
             direction: "down" (transparent → opaque) or "up" (opaque → transparent)
         """
         abs_rect = self._abs_rect(rect)
-        self._renderer.draw_gradient_fade(self._draw, abs_rect, color=color, direction=direction)
+        self._renderer.draw_gradient_fade(
+            self._draw,
+            abs_rect,
+            color=self._resolve_color(color),
+            direction=direction,
+        )
 
     def draw_image(
         self,
