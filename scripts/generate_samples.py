@@ -2104,9 +2104,10 @@ def generate_welcome_screen(renderer: Renderer, output_dir: Path) -> None:
         WidgetConfig(
             widget_type="text",
             slot=3,
+            label="Setup",
             color=COLOR_GRAY,
             options={
-                "text": "Configure →",
+                "text": "Ready",
                 "size": "small",
                 "align": "center",
             },
