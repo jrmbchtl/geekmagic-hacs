@@ -157,6 +157,51 @@ class TestFontMethods:
         assert height > 0
 
 
+class TestTruncateToWidth:
+    """Pixel-accurate truncation contract — relied on by Text and LabelValueRow."""
+
+    def _ctx(self) -> RenderContext:
+        renderer = Renderer()
+        _img, draw = renderer.create_canvas()
+        return RenderContext(draw, (0, 0, 240, 240), renderer)
+
+    def test_returns_text_unchanged_when_it_fits(self):
+        ctx = self._ctx()
+        font = ctx.get_font("regular")
+        # 240px is much wider than "hello" at any reasonable font size.
+        assert ctx.truncate_to_width("hello", font, 240) == "hello"
+
+    def test_returns_empty_for_zero_width(self):
+        ctx = self._ctx()
+        font = ctx.get_font("regular")
+        assert ctx.truncate_to_width("hello", font, 0) == ""
+
+    def test_returns_empty_for_negative_width(self):
+        ctx = self._ctx()
+        font = ctx.get_font("regular")
+        assert ctx.truncate_to_width("hello", font, -10) == ""
+
+    def test_appends_ellipsis_when_text_must_shrink(self):
+        ctx = self._ctx()
+        font = ctx.get_font("regular")
+        full_w, _ = ctx.get_text_size("Downtown Station", font)
+        # Half of the natural width forces the loop to truncate.
+        out = ctx.truncate_to_width("Downtown Station", font, full_w // 2)
+        assert out.endswith("…")
+        assert len(out) < len("Downtown Station")
+        # Result must actually fit in the budget.
+        assert ctx.get_text_size(out, font)[0] <= full_w // 2
+
+    def test_returns_lone_ellipsis_when_even_one_char_overflows(self):
+        ctx = self._ctx()
+        font = ctx.get_font("large")
+        single_w, _ = ctx.get_text_size("M", font)
+        # Budget tighter than a single glyph — loop body can't run, falls
+        # through to the bare ellipsis.
+        out = ctx.truncate_to_width("M", font, max(1, single_w // 2))
+        assert out == "…"
+
+
 class TestDrawingMethods:
     """Tests for drawing methods using local coordinates."""
 

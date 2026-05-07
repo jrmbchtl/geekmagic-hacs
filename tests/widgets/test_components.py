@@ -405,45 +405,6 @@ class TestTextAutoFit:
         assert font is ctx.get_font("small")
 
 
-class TestTextTruncate:
-    @pytest.fixture
-    def ctx(self) -> MagicMock:
-        ctx = MagicMock()
-        ctx.theme.text_primary = (255, 255, 255)
-        ctx.theme.text_secondary = (150, 150, 150)
-        ctx.get_font.return_value = MagicMock()
-        # Each character is 5 px wide, "…" is 4 px.
-        ctx.get_text_size.side_effect = lambda text, font: (
-            (4 if text == "…" else len(text) * 5),
-            10,
-        )
-        return ctx
-
-    def test_returns_text_unchanged_when_fits(self, ctx: MagicMock) -> None:
-        text = Text(text="hello")
-        out = text._truncate_text(ctx, "hello", ctx.get_font(), max_width=100)
-        assert out == "hello"
-
-    def test_returns_ellipsis_for_zero_width(self, ctx: MagicMock) -> None:
-        text = Text(text="hello")
-        assert text._truncate_text(ctx, "hello", ctx.get_font(), max_width=0) == ""
-
-    def test_returns_ellipsis_when_single_char_too_wide(self, ctx: MagicMock) -> None:
-        # "M" is 5 wide, max_width 3 — loop body never executes (len==1),
-        # falls through to the bare ellipsis return.
-        text = Text(text="M")
-        out = text._truncate_text(ctx, "M", ctx.get_font(), max_width=3)
-        assert out == "…"
-
-    def test_truncates_with_ellipsis(self, ctx: MagicMock) -> None:
-        # "Downtown" is 40 wide; budget 24 should give "Down…" (5 chars at
-        # 4 wide each + 4 ellipsis = 24).
-        text = Text(text="Downtown")
-        out = text._truncate_text(ctx, "Downtown", ctx.get_font(), max_width=24)
-        assert out.endswith("…")
-        assert len(out) <= len("Downtown")
-
-
 class TestAdaptiveMeasure:
     """Adaptive.measure must report the same dimensions it will render at.
 

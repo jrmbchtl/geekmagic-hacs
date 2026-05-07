@@ -293,6 +293,31 @@ class RenderContext:
             font = self.get_font("regular")
         return self._renderer.get_text_size(text, font)
 
+    def truncate_to_width(
+        self,
+        text: str,
+        font: FreeTypeFont | ImageFont,
+        max_width: int,
+    ) -> str:
+        """Trim ``text`` with a trailing ellipsis until it fits ``max_width``.
+
+        Pixel-accurate (uses the renderer's text metrics) — used by widgets
+        that lay out text in a fixed slot rather than through ``fit_text``.
+        Returns ``""`` if ``max_width <= 0``.
+        """
+        if max_width <= 0:
+            return ""
+        if self._renderer.get_text_size(text, font)[0] <= max_width:
+            return text
+        ellipsis = "…"
+        truncated = text
+        while len(truncated) > 1:
+            truncated = truncated[:-1]
+            candidate = truncated + ellipsis
+            if self._renderer.get_text_size(candidate, font)[0] <= max_width:
+                return candidate
+        return ellipsis
+
     # =========================================================================
     # Drawing Methods - all take LOCAL coordinates
     # =========================================================================

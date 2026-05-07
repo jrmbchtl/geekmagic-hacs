@@ -176,22 +176,6 @@ class Text(Component):
             font = ctx.get_font(self.font, bold=self.bold)
         return ctx.get_text_size(self.text, font)
 
-    def _truncate_text(self, ctx: RenderContext, text: str, font, max_width: int) -> str:
-        """Truncate text with ellipsis to fit within max_width."""
-        if max_width <= 0:
-            return ""
-        text_width, _ = ctx.get_text_size(text, font)
-        if text_width <= max_width:
-            return text
-        ellipsis = "…"
-        while len(text) > 1:
-            text = text[:-1]
-            test_text = text + ellipsis
-            text_width, _ = ctx.get_text_size(test_text, font)
-            if text_width <= max_width:
-                return test_text
-        return ellipsis
-
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         if self.auto_fit:
             font = self._pick_font(ctx, width)
@@ -203,7 +187,7 @@ class Text(Component):
         # Apply truncation if enabled
         display_text = self.text
         if self.truncate or self.auto_fit:
-            display_text = self._truncate_text(ctx, self.text, font, width)
+            display_text = ctx.truncate_to_width(self.text, font, width)
 
         if self.align == "start":
             text_x = x
