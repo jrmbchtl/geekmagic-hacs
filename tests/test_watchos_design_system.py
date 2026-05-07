@@ -41,7 +41,6 @@ from custom_components.geekmagic.widgets.theme import (
     THEME_CLASSIC,
     THEME_WATCHOS,
     THEMES,
-    Theme,
     get_theme,
 )
 
@@ -276,40 +275,6 @@ class TestNoHardcodedSystemColors:
             "See CLAUDE.md > Design System for the full rule.\n\n"
             "Offenders:\n  " + "\n  ".join(offenders)
         )
-
-
-# ---------------------------------------------------------------------------
-# Theme.track_color()
-# ---------------------------------------------------------------------------
-
-
-class TestTrackColor:
-    def test_tint_track_returns_dimmed_tint(self) -> None:
-        """A tinted track is the accent color blended toward black at the
-        configured opacity."""
-        red = (255, 0, 0)
-        track = THEME_WATCHOS.track_color(red)
-        # Track should be a much darker red, not gray
-        assert track[0] > 0  # has red channel
-        assert track[0] < red[0]  # but dimmer than full red
-        assert track[1] == 0
-        assert track[2] == 0
-
-    def test_tint_track_opacity_math(self) -> None:
-        """Soft check that track_color uses tint_track_opacity, roughly."""
-        red = (200, 0, 0)
-        opacity = THEME_WATCHOS.tint_track_opacity
-        track = THEME_WATCHOS.track_color(red)
-        expected_r = int(red[0] * opacity)
-        # Allow ±1 for int rounding
-        assert abs(track[0] - expected_r) <= 1
-
-    def test_flat_track_returns_bar_background(self) -> None:
-        """When a theme opts out of tinted tracks (Theme.tint_track=False),
-        track_color returns the flat bar_background instead — preserves the
-        crisp look for themes like 'minimal' that don't use tints."""
-        flat = Theme(name="flat", tint_track=False, bar_background=(40, 40, 40))
-        assert flat.track_color((255, 0, 0)) == (40, 40, 40)
 
 
 # ---------------------------------------------------------------------------

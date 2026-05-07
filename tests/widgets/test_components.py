@@ -10,7 +10,6 @@ from custom_components.geekmagic.widgets.components import (
     Adaptive,
     Bar,
     Column,
-    Empty,
     Flex,
     Icon,
     Ring,
@@ -174,17 +173,6 @@ class TestSpacer:
         # No draw calls should be made
         mock_ctx.draw_text.assert_not_called()
         mock_ctx.draw_icon.assert_not_called()
-
-
-class TestEmpty:
-    """Tests for Empty component."""
-
-    def test_measure(self, mock_ctx: MagicMock) -> None:
-        """Test empty component measures as zero."""
-        empty = Empty()
-        w, h = empty.measure(mock_ctx, 100, 80)
-        assert w == 0
-        assert h == 0
 
 
 class TestRow:

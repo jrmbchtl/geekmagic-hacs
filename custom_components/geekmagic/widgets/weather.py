@@ -83,27 +83,6 @@ WEATHER_ROLES: dict[str, Color] = {
 }
 
 
-def _temp_role(temp: Any) -> Color | None:
-    """Pick a theme role for a temperature reading (°C).
-
-    Returns a sentinel that the renderer resolves at draw time, so a
-    "hot" temp shows in the theme's warning color (orange on watchOS,
-    coral on candy, amber on retro). Returns None for mild temps so the
-    caller falls back to the regular text_primary colour.
-    """
-    try:
-        t = float(temp)
-    except (ValueError, TypeError):
-        return None
-    if t >= 30:
-        return THEME_ERROR
-    if t >= 22:
-        return THEME_WARNING
-    if t >= 12:
-        return None  # Mild — falls through to text_primary
-    return THEME_INFO  # Cool / cold
-
-
 # Weekday abbreviations
 WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -154,25 +133,25 @@ class WeatherDisplay(Component):
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         """Render weather."""
         icon_name = WEATHER_ICONS.get(self.condition, "weather-sunny")
-        self._icon_tint = WEATHER_ROLES.get(self.condition, THEME_WARNING)
+        icon_tint = WEATHER_ROLES.get(self.condition, THEME_WARNING)
 
         size = get_size_category(height)
 
         if size in (SizeCategory.MEDIUM, SizeCategory.LARGE) and self.show_forecast:
-            component = self._build_full(ctx, width, height, icon_name)
+            component = self._build_full(width, height, icon_name, icon_tint)
         elif size == SizeCategory.SMALL and self.show_forecast and self.forecast:
-            component = self._build_semi_compact(ctx, width, height, icon_name)
+            component = self._build_semi_compact(width, height, icon_name, icon_tint)
         else:
-            component = self._build_compact(ctx, width, height, icon_name)
+            component = self._build_compact(width, height, icon_name, icon_tint)
 
         component.render(ctx, x, y, width, height)
 
     def _build_full(
         self,
-        ctx: RenderContext,
         width: int,
         height: int,
         icon_name: str,
+        icon_tint: Color,
     ) -> Component:
         """Build full weather layout with forecast (hero + meta strip + forecast row)."""
         padding = int(width * 0.04)
@@ -211,7 +190,7 @@ class WeatherDisplay(Component):
 
         main_weather = Column(
             children=[
-                Icon(icon_name, size=icon_size, color=self._icon_tint),
+                Icon(icon_name, size=icon_size, color=icon_tint),
                 Text(temp_str, font="xlarge", bold=True, color=THEME_TEXT_PRIMARY),
                 meta_strip,
             ],
@@ -280,10 +259,10 @@ class WeatherDisplay(Component):
 
     def _build_semi_compact(
         self,
-        ctx: RenderContext,
         width: int,
         height: int,
         icon_name: str,
+        icon_tint: Color,
     ) -> Component:
         """Build semi-compact layout with mini forecast icons."""
         padding = int(width * 0.04)
@@ -294,7 +273,7 @@ class WeatherDisplay(Component):
         # Top row: current weather (icon + temp), tinted by condition
         top_row = Row(
             children=[
-                Icon(icon_name, size=icon_size, color=self._icon_tint),
+                Icon(icon_name, size=icon_size, color=icon_tint),
                 Text(temp_str, font="large", bold=True, color=THEME_TEXT_PRIMARY),
             ],
             gap=4,
@@ -336,10 +315,10 @@ class WeatherDisplay(Component):
 
     def _build_compact(
         self,
-        ctx: RenderContext,
         width: int,
         height: int,
         icon_name: str,
+        icon_tint: Color,
     ) -> Component:
         """Build compact weather layout."""
         padding = int(width * 0.04)
@@ -347,7 +326,7 @@ class WeatherDisplay(Component):
         temp_str = f"{self.temperature}°" if self.temperature != "--" else "--"
 
         # Left side: icon (tinted by condition)
-        left_side = Icon(icon_name, size=icon_size, color=self._icon_tint)
+        left_side = Icon(icon_name, size=icon_size, color=icon_tint)
 
         # Right side: temperature and optionally humidity
         right_children = [
@@ -417,7 +396,6 @@ class WeatherWidget(Widget):
         self.show_forecast = config.options.get("show_forecast", True)
         self.forecast_days = config.options.get("forecast_days", 3)
         self.show_humidity = config.options.get("show_humidity", True)
-        self.show_wind = config.options.get("show_wind", False)
         self.show_high_low = config.options.get("show_high_low", True)
 
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:

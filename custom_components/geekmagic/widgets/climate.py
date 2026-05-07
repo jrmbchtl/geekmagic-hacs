@@ -125,11 +125,11 @@ class ClimateDisplay(Component):
         is_narrow = width < 130  # 2-column side-by-side
 
         if is_very_narrow or size in (SizeCategory.MICRO, SizeCategory.TINY):
-            component = self._build_compact(ctx, width, height)
+            component = self._build_compact(width, height)
         elif is_narrow or size == SizeCategory.SMALL:
-            component = self._build_medium(ctx, width, height)
+            component = self._build_medium(width, height)
         else:
-            component = self._build_full(ctx, width, height)
+            component = self._build_full(width, height)
 
         component.render(ctx, x, y, width, height)
 
@@ -181,7 +181,7 @@ class ClimateDisplay(Component):
             "target", _format_temp(self.target_temp), THEME_TEXT_SECONDARY, icon_size, font
         )
 
-    def _build_full(self, ctx: RenderContext, width: int, height: int) -> Component:
+    def _build_full(self, width: int, height: int) -> Component:
         """Hero layout for cells >=130x130: caps mode label + icon at top,
         bold huge temperature middle (auto-fit), target+humidity bottom.
         Three bands distributed via justify=space-between so the cell is
@@ -248,7 +248,7 @@ class ClimateDisplay(Component):
             justify="space-evenly",
         )
 
-    def _build_medium(self, ctx: RenderContext, width: int, height: int) -> Component:
+    def _build_medium(self, width: int, height: int) -> Component:
         """Layout for 2x2-ish cells (~100-140px in both axes).
 
         Three rows distributed top-to-bottom:
@@ -319,7 +319,7 @@ class ClimateDisplay(Component):
             justify="space-evenly",
         )
 
-    def _build_compact(self, ctx: RenderContext, width: int, height: int) -> Component:
+    def _build_compact(self, width: int, height: int) -> Component:
         """Tight 2-row layout for small grid cells (3x2, 3x3, MICRO/TINY).
 
         Top: icon + bold tinted temp on one row.

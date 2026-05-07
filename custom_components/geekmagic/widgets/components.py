@@ -482,17 +482,6 @@ class Spacer(Component):
 
 
 @dataclass
-class Empty(Component):
-    """Empty component that renders nothing (for conditional rendering)."""
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        return (0, 0)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        pass
-
-
-@dataclass
 class Flex(Component):
     """Wrap a child so a Row/Column gives it the remaining main-axis space.
 
@@ -889,7 +878,6 @@ __all__ = [
     "Color",
     "Column",
     "Component",
-    "Empty",
     "Flex",
     "Icon",
     "IconValueDisplay",

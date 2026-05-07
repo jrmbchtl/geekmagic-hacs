@@ -10,7 +10,7 @@ hierarchy, and tinted (not gray) gauge tracks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 # Type aliases
@@ -89,15 +89,13 @@ class Theme:
 
     # Accent color palette for widgets (cycles through for variety).
     # Default = watchOS system colors in a pleasant rotation.
-    accent_colors: tuple[Color, ...] = field(
-        default_factory=lambda: (
-            SYSTEM_TEAL,
-            SYSTEM_ORANGE,
-            SYSTEM_GREEN,
-            SYSTEM_PURPLE,
-            SYSTEM_PINK,
-            SYSTEM_YELLOW,
-        )
+    accent_colors: tuple[Color, ...] = (
+        SYSTEM_TEAL,
+        SYSTEM_ORANGE,
+        SYSTEM_GREEN,
+        SYSTEM_PURPLE,
+        SYSTEM_PINK,
+        SYSTEM_YELLOW,
     )
 
     # Shape styling
@@ -139,21 +137,6 @@ class Theme:
     def get_accent_color(self, index: int) -> Color:
         """Get accent color for a slot index, cycling through available colors."""
         return self.accent_colors[index % len(self.accent_colors)]
-
-    def track_color(self, tint: Color) -> Color:
-        """Compute the track color for a tinted bar/ring/arc.
-
-        When `tint_track` is True, returns the tint blended toward black
-        at `tint_track_opacity`. Otherwise returns `bar_background`.
-        """
-        if not self.tint_track:
-            return self.bar_background
-        op = self.tint_track_opacity
-        return (
-            int(tint[0] * op),
-            int(tint[1] * op),
-            int(tint[2] * op),
-        )
 
 
 # =============================================================================

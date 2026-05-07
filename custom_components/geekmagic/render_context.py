@@ -6,7 +6,6 @@ container (0, 0 to width, height) instead of absolute canvas coordinates.
 
 from __future__ import annotations
 
-import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -64,8 +63,6 @@ if TYPE_CHECKING:
 
     from .renderer import Renderer
     from .widgets.theme import Theme
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class RenderContext:
@@ -208,68 +205,6 @@ class RenderContext:
         x1, y1, x2, y2 = rect
         return (self._x1 + x1, self._y1 + y1, self._x1 + x2, self._y1 + y2)
 
-    def _check_point_bounds(self, x: int, y: int, context: str = "") -> None:
-        """Log warning if point is outside widget bounds.
-
-        Args:
-            x: X coordinate in local space
-            y: Y coordinate in local space
-            context: Description of the operation for logging
-        """
-        if x < 0 or x > self.width or y < 0 or y > self.height:
-            _LOGGER.debug(
-                "Drawing outside widget bounds: %s at (%d, %d), bounds=(0, 0, %d, %d)",
-                context or "operation",
-                x,
-                y,
-                self.width,
-                self.height,
-            )
-
-    def _check_rect_bounds(self, rect: tuple[int, int, int, int], context: str = "") -> None:
-        """Log warning if rect extends outside widget bounds.
-
-        Args:
-            rect: (x1, y1, x2, y2) in local coordinates
-            context: Description of the operation for logging
-        """
-        x1, y1, x2, y2 = rect
-        if x1 < 0 or y1 < 0 or x2 > self.width or y2 > self.height:
-            _LOGGER.debug(
-                "Drawing outside widget bounds: %s rect=(%d, %d, %d, %d), bounds=(0, 0, %d, %d)",
-                context or "operation",
-                x1,
-                y1,
-                x2,
-                y2,
-                self.width,
-                self.height,
-            )
-
-    def is_point_in_bounds(self, x: int, y: int) -> bool:
-        """Check if a point is within widget bounds.
-
-        Args:
-            x: X coordinate in local space
-            y: Y coordinate in local space
-
-        Returns:
-            True if point is within bounds
-        """
-        return 0 <= x <= self.width and 0 <= y <= self.height
-
-    def is_rect_in_bounds(self, rect: tuple[int, int, int, int]) -> bool:
-        """Check if a rect is fully within widget bounds.
-
-        Args:
-            rect: (x1, y1, x2, y2) in local coordinates
-
-        Returns:
-            True if rect is fully within bounds
-        """
-        x1, y1, x2, y2 = rect
-        return x1 >= 0 and y1 >= 0 and x2 <= self.width and y2 <= self.height
-
     # =========================================================================
     # Font Methods
     # =========================================================================
@@ -342,26 +277,6 @@ class RenderContext:
             bold=bold,
             rounded=self.theme.rounded_font,
         )
-
-    def get_font_for_height(
-        self,
-        target_height: int,
-        bold: bool = False,
-    ) -> FreeTypeFont | ImageFont:
-        """Get a font at a specific target height in unscaled pixels.
-
-        Useful for scaling fonts proportionally from a measured size.
-
-        Args:
-            target_height: Desired font height in unscaled pixels
-            bold: Whether to use bold variant
-
-        Returns:
-            Font at approximately the target height
-        """
-        # Scale for supersampling
-        scaled_height = target_height * self._renderer.scale
-        return self._renderer.get_scaled_font("primary", scaled_height, bold=bold)
 
     def get_text_size(
         self,
@@ -712,23 +627,6 @@ class RenderContext:
         self._renderer.draw_image(
             self._draw, source, abs_rect, preserve_aspect=preserve_aspect, fit_mode=fit_mode
         )
-
-    # =========================================================================
-    # Color Utilities
-    # =========================================================================
-
-    def dim_color(self, color: tuple[int, int, int], factor: float = 0.3) -> tuple[int, int, int]:
-        """Dim a color by a factor."""
-        return self._renderer.dim_color(color, factor)
-
-    def blend_color(
-        self,
-        color1: tuple[int, int, int],
-        color2: tuple[int, int, int],
-        factor: float = 0.5,
-    ) -> tuple[int, int, int]:
-        """Blend two colors."""
-        return self._renderer.blend_color(color1, color2, factor)
 
     def tint_at(
         self,

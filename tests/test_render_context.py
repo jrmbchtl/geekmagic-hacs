@@ -362,65 +362,6 @@ class TestDrawingMethods:
         assert final_img.size == (DISPLAY_WIDTH, DISPLAY_HEIGHT)
 
 
-class TestColorUtilities:
-    """Tests for color utility methods."""
-
-    def test_dim_color(self):
-        """Test color dimming."""
-        renderer = Renderer()
-        _img, draw = renderer.create_canvas()
-
-        ctx = RenderContext(draw, (0, 0, 100, 100), renderer)
-
-        white = (255, 255, 255)
-        dimmed = ctx.dim_color(white, factor=0.5)
-
-        assert dimmed == (127, 127, 127)
-
-    def test_dim_color_zero(self):
-        """Test dimming to zero."""
-        renderer = Renderer()
-        _img, draw = renderer.create_canvas()
-
-        ctx = RenderContext(draw, (0, 0, 100, 100), renderer)
-
-        white = (255, 255, 255)
-        dimmed = ctx.dim_color(white, factor=0.0)
-
-        assert dimmed == (0, 0, 0)
-
-    def test_blend_color(self):
-        """Test color blending."""
-        renderer = Renderer()
-        _img, draw = renderer.create_canvas()
-
-        ctx = RenderContext(draw, (0, 0, 100, 100), renderer)
-
-        black = (0, 0, 0)
-        white = (255, 255, 255)
-        blended = ctx.blend_color(black, white, factor=0.5)
-
-        assert blended == (127, 127, 127)
-
-    def test_blend_color_extremes(self):
-        """Test blending at extreme factors."""
-        renderer = Renderer()
-        _img, draw = renderer.create_canvas()
-
-        ctx = RenderContext(draw, (0, 0, 100, 100), renderer)
-
-        black = (0, 0, 0)
-        white = (255, 255, 255)
-
-        # factor=0 should return first color
-        blended0 = ctx.blend_color(black, white, factor=0.0)
-        assert blended0 == (0, 0, 0)
-
-        # factor=1 should return second color
-        blended1 = ctx.blend_color(black, white, factor=1.0)
-        assert blended1 == (255, 255, 255)
-
-
 class TestRenderContextIntegration:
     """Integration tests for RenderContext with real widget-like scenarios."""
 
