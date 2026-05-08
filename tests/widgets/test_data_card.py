@@ -47,7 +47,7 @@ class TestPickCardMode:
     """
 
     def test_stacked_for_square_roomy_cells(self) -> None:
-        # 110×110 is a 2x2 grid cell with default padding.
+        # 110x110 is a 2x2 grid cell with default padding.
         assert pick_card_mode(110, 110) == "stacked"
         assert pick_card_mode(150, 150) == "stacked"
 
@@ -64,14 +64,14 @@ class TestPickCardMode:
         assert pick_card_mode(70, 70) == "compact"
 
     def test_vertical_only_with_vertical_bar(self) -> None:
-        # 80×240 is height > width × 1.8, but no VerticalBar → compact.
+        # 80x240 is height > width x 1.8, but no VerticalBar → compact.
         assert pick_card_mode(80, 240) == "compact"
         # With a VerticalBar indicator, switch to vertical mode.
         bar = VerticalBar(percent=50, color=THEME_PRIMARY)
         assert pick_card_mode(80, 240, bar) == "vertical"
 
     def test_vertical_threshold_is_strict(self) -> None:
-        # height > width × 1.8 — exactly 1.8 is NOT vertical.
+        # height > width x 1.8 — exactly 1.8 is NOT vertical.
         bar = VerticalBar(percent=50, color=THEME_PRIMARY)
         assert pick_card_mode(100, 180, bar) == "compact"
         assert pick_card_mode(100, 181, bar) == "vertical"

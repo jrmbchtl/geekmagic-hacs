@@ -17,7 +17,7 @@ shape, seven slightly different implementations.
 ``DataCard`` lets a widget *list its data* in a single dataclass and
 delegates layout to one shared policy:
 
-  - **vertical** (``height > width × 1.8`` AND indicator is a
+  - **vertical** (``height > width x 1.8`` AND indicator is a
     ``VerticalBar``): stacked text column on the left, vertical bar on
     the right (or value-over-bar in very narrow cells).
   - **ring** (indicator is a ``Ring`` or ``Arc``): caption above, ring
@@ -106,9 +106,7 @@ def cell_metrics(width: int, height: int) -> CellMetrics:
 # =============================================================================
 
 
-def pick_card_mode(
-    width: int, height: int, indicator: Component | None = None
-) -> CardMode:
+def pick_card_mode(width: int, height: int, indicator: Component | None = None) -> CardMode:
     """Pick a layout mode for the given cell shape and indicator.
 
     Thresholds match ``component_helpers._pick_bar_mode`` (already
@@ -147,20 +145,16 @@ class Chip(Component):
     icon: str | None = None
     color: Color = THEME_TEXT_SECONDARY  # text colour; icon shares it
 
-    def measure(
-        self, ctx: RenderContext, max_width: int, max_height: int
-    ) -> tuple[int, int]:
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         return self._build(max_height).measure(ctx, max_width, max_height)
 
-    def render(
-        self, ctx: RenderContext, x: int, y: int, width: int, height: int
-    ) -> None:
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         self._build(height).render(ctx, x, y, width, height)
 
     def _build(self, height: int) -> Component:
         """Return the underlying Row tree, sized for the row height."""
         # Icon size scales off the row height — chips usually live in
-        # a strip ~12–18 px tall, so the icon stays inline with the
+        # a strip ~12-18 px tall, so the icon stays inline with the
         # text glyphs.
         icon_px = max(10, min(18, int(height * 0.85)))
         children: list[Component] = []
@@ -197,17 +191,11 @@ class DataCard(Component):
     # Optional override; ``None`` means "use cell_metrics(width, height)".
     padding: int | None = None
 
-    def measure(
-        self, ctx: RenderContext, max_width: int, max_height: int
-    ) -> tuple[int, int]:
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         return (max_width, max_height)
 
-    def render(
-        self, ctx: RenderContext, x: int, y: int, width: int, height: int
-    ) -> None:
-        chosen = (
-            self.mode if self.mode != "auto" else pick_card_mode(width, height, self.indicator)
-        )
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        chosen = self.mode if self.mode != "auto" else pick_card_mode(width, height, self.indicator)
         metrics = cell_metrics(width, height)
         pad = self.padding if self.padding is not None else metrics.padding
 
@@ -360,7 +348,9 @@ class DataCard(Component):
                 align="stretch",
                 justify="start",
                 children=[
-                    Row(children=[self._hero_text(font="medium")], justify="center", align="center"),
+                    Row(
+                        children=[self._hero_text(font="medium")], justify="center", align="center"
+                    ),
                     Row(children=[self._caption_text()], justify="center", align="center"),
                     Flex(self.indicator) if self.indicator is not None else Spacer(),
                 ],
@@ -376,9 +366,7 @@ class DataCard(Component):
             children=children,
         )
 
-    def _build_ring(
-        self, metrics: CellMetrics, pad: int, width: int, height: int
-    ) -> Component:
+    def _build_ring(self, metrics: CellMetrics, pad: int, width: int, height: int) -> Component:
         """Ring/Arc indicator: hero centred inside the ring.
 
         On roomy cells (``width ≥ 100`` AND ``height ≥ 100``) the
