@@ -225,12 +225,18 @@ class DataCard(Component):
         metrics = cell_metrics(width, height)
         pad = self.padding if self.padding is not None else metrics.padding
         # Drop the supporting chip strip when the cell is too tight
-        # to show it cleanly. Below ~140 px of height, two chips
-        # either overlap (wide-enough cells) or stack vertically and
-        # crowd the card (Adaptive's Column fallback). The icon +
-        # mode caption + hero are the priority info; target/humidity
-        # are nice-to-have and only earn their slot in roomy cells.
-        card = replace(self, supporting=[]) if self.supporting and height < 140 else self
+        # to show it cleanly. Multi-chip strips need ~140 px of
+        # height (otherwise two chips either overlap or stack
+        # vertically and crowd the card). A single chip — clock date,
+        # standalone unit — fits down to ~80 px before it crowds the
+        # hero. Heroes always win the priority fight when room runs
+        # out.
+        if self.supporting:
+            min_height = 140 if len(self.supporting) > 1 else 80
+            drop_supporting = height < min_height
+        else:
+            drop_supporting = False
+        card = replace(self, supporting=[]) if drop_supporting else self
         # Override: stacked mode with both a chip strip AND a hero
         # band needs at least ~90 px of height to lay out four bands
         # without overlap. In a wide-and-short cell (e.g. 120x80
@@ -588,9 +594,9 @@ class DataCard(Component):
     def _build_ring(self, metrics: CellMetrics, pad: int, width: int, height: int) -> Component:
         """Ring/Arc indicator: hero centred inside the ring.
 
-        On roomy cells (``width ≥ 100`` AND ``height ≥ 100``) the
-        caption sits on its own band above the ring; otherwise the
-        caption is dropped to keep the ring readable.
+        Caption sits on its own band above the ring whenever the cell
+        is at least 65 px on its short side (matches the stacked-mode
+        floor); only very tight cells drop it.
         """
         # ring mode is only entered when self.indicator is a Ring/Arc
         # (pick_card_mode guarantees this). Build a Stack[ring/arc,
@@ -613,7 +619,7 @@ class DataCard(Component):
                 ),
             ]
         )
-        roomy = width >= 100 and height >= 100
+        roomy = min(width, height) >= 65
         if roomy and self.caption:
             return Column(
                 gap=metrics.gap,

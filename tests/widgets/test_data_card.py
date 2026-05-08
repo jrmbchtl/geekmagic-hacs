@@ -245,8 +245,8 @@ class TestDataCardRing:
     def test_tight_cell_drops_caption(self) -> None:
         ring = Ring(percent=70, color=THEME_PRIMARY)
         card = DataCard(mode="ring", caption="CPU", hero="70%", indicator=ring)
-        col = cast("Column", card._build_ring(cell_metrics(80, 80), 6, 80, 80))
-        # Caption dropped — only the Flex(Stack).
+        # Below the 65-px short-side floor, ring drops the caption.
+        col = cast("Column", card._build_ring(cell_metrics(60, 60), 6, 60, 60))
         assert len(col.children) == 1
 
 

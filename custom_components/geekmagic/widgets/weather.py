@@ -23,7 +23,6 @@ from .components import (
     Component,
     Icon,
     Row,
-    Spacer,
     Text,
 )
 
@@ -242,17 +241,18 @@ class WeatherDisplay(Component):
                     padding=padding,
                 )
 
-        # Final layout: hero (icon + temp + condition/humidity strip) at
-        # the top, Spacer absorbs slack, forecast row pinned to the
-        # bottom. align="stretch" gives every child the full cell width
-        # so the forecast Row's three day-columns can space-around
-        # across the entire width.
+        # Final layout: hero (icon + temp + condition/humidity strip)
+        # above the forecast row, both centred as a group rather than
+        # pinned to opposite cell edges. ``space-evenly`` puts equal
+        # gap before / between / after the bands so the current-day
+        # group sits near the forecast group instead of being pushed
+        # apart by a Spacer.
         if forecast_component:
             return Column(
-                children=[main_weather, Spacer(), forecast_component],
-                gap=int(height * 0.02),
+                children=[main_weather, forecast_component],
+                gap=int(height * 0.04),
                 align="stretch",
-                justify="start",
+                justify="space-evenly",
             )
         # No forecast — just the centred hero block.
         return main_weather
