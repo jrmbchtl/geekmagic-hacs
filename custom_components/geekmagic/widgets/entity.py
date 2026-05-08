@@ -9,8 +9,8 @@ from ..const import (
     PLACEHOLDER_VALUE,
 )
 from .base import Widget, WidgetConfig
-from .component_helpers import CenteredValue, IconValue
-from .components import THEME_TEXT_PRIMARY, THEME_TEXT_SECONDARY, Component, Panel
+from .components import Component, Panel
+from .data_card import DataCard
 from .helpers import get_binary_sensor_icon, translate_binary_state
 
 if TYPE_CHECKING:
@@ -79,7 +79,7 @@ class EntityWidget(Widget):
         if entity is None:
             value = PLACEHOLDER_VALUE
             unit = ""
-            name = self.config.label or self.config.entity_id or PLACEHOLDER_NAME
+            name = self.label_for(None, fallback=self.config.entity_id or PLACEHOLDER_NAME)
         else:
             # Get value from attribute or state
             if self.attribute:
@@ -87,9 +87,12 @@ class EntityWidget(Widget):
                 value = str(raw_value) if raw_value is not None else PLACEHOLDER_VALUE
             else:
                 value = entity.state
-                # Translate binary sensor states (e.g., "on" -> "Open" for door sensors)
                 if entity.entity_id.startswith("binary_sensor."):
                     value = translate_binary_state(value, entity.device_class)
+                elif isinstance(value, str) and value.isalpha() and len(value) <= 16:
+                    # Title-case short alpha flag states ('on'→'On', 'home'→'Home')
+                    # to match binary-sensor 'Open'/'Closed' style.
+                    value = value.title()
             # Apply precision formatting if specified and value is numeric
             if self.precision is not None:
                 try:
@@ -98,39 +101,24 @@ class EntityWidget(Widget):
                 except (ValueError, TypeError):
                     pass  # Keep original value if not numeric
             unit = entity.unit if self.show_unit else ""
-            name = self.config.label or entity.friendly_name or entity.entity_id
+            name = self.label_for(entity)
 
         # Build display value with unit
         value_text = f"{value}{unit}" if unit else value
-        label = name if self.show_name else None
 
         # Determine icon to use
         icon = self.icon
         if not icon and self.show_icon:
             icon = _get_entity_icon(entity)
 
-        color = self.config.color or ctx.theme.get_accent_color(self.config.slot)
-
-        # Build component based on whether we have an icon
-        if icon:
-            content = IconValue(
-                icon=icon,
-                value=value_text,
-                label=label or "",
-                color=color,
-                value_color=THEME_TEXT_PRIMARY,
-                label_color=THEME_TEXT_SECONDARY,
-            )
-        else:
-            content = CenteredValue(
-                value=value_text,
-                label=label,
-                value_color=THEME_TEXT_PRIMARY,
-                label_color=THEME_TEXT_SECONDARY,
-            )
-
-        # Wrap in panel if enabled
-        if self.show_panel:
-            return Panel(child=content)
-
-        return content
+        card = DataCard(
+            caption=name if self.show_name else None,
+            icon=icon,
+            icon_color=self.config.color or ctx.theme.get_accent_color(self.config.slot),
+            # Promote the icon to its own band (was IconValueDisplay's
+            # default look). The entity icon is the cell's primary
+            # visual identifier — chip size loses the read.
+            icon_role="feature",
+            hero=value_text,
+        )
+        return Panel(child=card) if self.show_panel else card

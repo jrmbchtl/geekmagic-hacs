@@ -8,7 +8,7 @@ Example usage:
     def render(self, ctx, state) -> Component:
         return Column(children=[
             Text("75%", font="medium", bold=True),  # Uses THEME_TEXT_PRIMARY by default
-            Bar(percent=75, color=COLOR_CYAN),
+            Bar(percent=75, color=THEME_PRIMARY),   # Theme accent, resolved at render
             Text("CPU", font="tiny", color=THEME_TEXT_SECONDARY),
         ])
 """
@@ -28,30 +28,32 @@ from ._flex import (
     JustifyContent,
     Node,
 )
+from .colors import (
+    THEME_ERROR,
+    THEME_INFO,
+    THEME_MUTED,
+    THEME_PRIMARY,
+    THEME_SECONDARY,
+    THEME_SUCCESS,
+    THEME_TEXT_PRIMARY,
+    THEME_TEXT_SECONDARY,
+    THEME_TEXT_TERTIARY,
+    THEME_WARNING,
+    Color,
+    resolve_theme_color,
+)
 
 if TYPE_CHECKING:
     from ..render_context import RenderContext
 
-# Type aliases
-Color = tuple[int, int, int]
-
-# Sentinel values for theme-aware colors
-# These are resolved at render time to the theme's actual colors
-THEME_TEXT_PRIMARY: Color = (-1, -1, -1)  # Resolves to theme.text_primary
-THEME_TEXT_SECONDARY: Color = (-2, -2, -2)  # Resolves to theme.text_secondary
-
 
 def _resolve_color(color: Color, ctx: RenderContext) -> Color:
-    """Resolve theme-aware color sentinels to actual colors."""
-    if color == THEME_TEXT_PRIMARY:
-        return ctx.theme.text_primary
-    if color == THEME_TEXT_SECONDARY:
-        return ctx.theme.text_secondary
-    return color
+    """Resolve theme-aware color sentinels to actual colors at render time."""
+    return resolve_theme_color(color, ctx.theme)
 
 
 Align = Literal["start", "center", "end", "stretch"]
-Justify = Literal["start", "center", "end", "space-between", "space-around"]
+Justify = Literal["start", "center", "end", "space-between", "space-around", "space-evenly"]
 
 
 def _to_justify(justify: Justify) -> JustifyContent:
@@ -62,6 +64,7 @@ def _to_justify(justify: Justify) -> JustifyContent:
         "end": JustifyContent.END,
         "space-between": JustifyContent.SPACE_BETWEEN,
         "space-around": JustifyContent.SPACE_AROUND,
+        "space-evenly": JustifyContent.SPACE_EVENLY,
     }
     return mapping.get(justify, JustifyContent.START)
 
@@ -159,12 +162,12 @@ class Text(Component):
 
     def _pick_font(self, ctx: RenderContext, max_width: int):
         """Return the largest font in the shrink chain that fits the text."""
-        for name in self._resolved_font_chain():
+        chain = self._resolved_font_chain()
+        for name in chain:
             f = ctx.get_font(name, bold=self.bold)
-            w, _ = ctx.get_text_size(self.text, f)
-            if w <= max_width:
+            if ctx.get_text_size(self.text, f)[0] <= max_width:
                 return f
-        return ctx.get_font(self._resolved_font_chain()[-1], bold=self.bold)
+        return ctx.get_font(chain[-1], bold=self.bold)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         if self.auto_fit:
@@ -172,22 +175,6 @@ class Text(Component):
         else:
             font = ctx.get_font(self.font, bold=self.bold)
         return ctx.get_text_size(self.text, font)
-
-    def _truncate_text(self, ctx: RenderContext, text: str, font, max_width: int) -> str:
-        """Truncate text with ellipsis to fit within max_width."""
-        if max_width <= 0:
-            return ""
-        text_width, _ = ctx.get_text_size(text, font)
-        if text_width <= max_width:
-            return text
-        ellipsis = "…"
-        while len(text) > 1:
-            text = text[:-1]
-            test_text = text + ellipsis
-            text_width, _ = ctx.get_text_size(test_text, font)
-            if text_width <= max_width:
-                return test_text
-        return ellipsis
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         if self.auto_fit:
@@ -200,7 +187,7 @@ class Text(Component):
         # Apply truncation if enabled
         display_text = self.text
         if self.truncate or self.auto_fit:
-            display_text = self._truncate_text(ctx, self.text, font, width)
+            display_text = ctx.truncate_to_width(self.text, font, width)
 
         if self.align == "start":
             text_x = x
@@ -256,12 +243,14 @@ class Icon(Component):
 class Bar(Component):
     """Horizontal progress bar component.
 
-    When background is None, uses theme-appropriate dark color.
+    When background is None, the track is tinted (a soft mix of the bar color
+    over the theme background) — watchOS Activity-bar style. Themes can opt
+    out by setting Theme.tint_track=False.
     """
 
     percent: float
-    color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme-aware dark color
+    color: Color = THEME_PRIMARY  # Theme-aware; resolves at render time
+    background: Color | None = None  # None = use theme-aware tinted track
     height: int | None = None  # None = use default relative to container
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
@@ -269,19 +258,60 @@ class Bar(Component):
         return (max_width, h)
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        # Use theme bar_background if not specified
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
         ctx.draw_bar((x, y, x + width, y + height), self.percent, self.color, bg)
 
 
 @dataclass
-class Ring(Component):
-    """Circular ring gauge component."""
+class VerticalBar(Component):
+    """Vertical progress bar — fills upward from the bottom.
+
+    Mirror of `Bar` on the vertical axis. Useful for tall, narrow cells
+    (1x2, 1x3, sidebar slots) where a horizontal bar looks orphaned. The
+    track picks up the theme's tinted-track style via `ctx.track_color`,
+    matching the rest of the gauge family.
+    """
 
     percent: float
-    color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme.bar_background
-    thickness: int | None = None  # None = auto-calculate
+    color: Color = THEME_PRIMARY  # Theme-aware; resolves at render time
+    background: Color | None = None  # None = theme tinted track
+    width: int | None = None  # None = sensible default relative to container
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        w = self.width or max(12, min(32, int(max_width * 0.30)))
+        return (w, max_height)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        bg_raw = self.background if self.background is not None else ctx.track_color(self.color)
+        fill_color = _resolve_color(self.color, ctx)
+        bg_color = _resolve_color(bg_raw, ctx)
+
+        # Small fixed radius matches horizontal Bar; larger radii produce a
+        # visible dip line where the fill ends.
+        radius = 2
+        ctx.draw_rounded_rect((x, y, x + width, y + height), radius=radius, fill=bg_color)
+        pct = max(0.0, min(100.0, self.percent))
+        fill_h = int(height * pct / 100)
+        if fill_h > 0:
+            ctx.draw_rounded_rect(
+                (x, y + height - fill_h, x + width, y + height),
+                radius=radius,
+                fill=fill_color,
+            )
+
+
+@dataclass
+class Ring(Component):
+    """Circular ring gauge component (Apple Activity-ring style).
+
+    When `background` is None and the theme has tint_track enabled, the
+    track is rendered as a soft tint of the ring color (watchOS look).
+    """
+
+    percent: float
+    color: Color = THEME_PRIMARY  # Theme-aware; resolves at render time
+    background: Color | None = None  # None = use theme tinted track
+    thickness: int | None = None  # None = auto-calculate (Activity-ring proportions)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         size = min(max_width, max_height)
@@ -291,8 +321,9 @@ class Ring(Component):
         size = min(width, height)
         radius = size // 2
         center = (x + width // 2, y + height // 2)
-        thickness = self.thickness or max(4, radius // 5)
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        # Activity-ring proportions: ~14% of the ring radius, with a 5px floor.
+        thickness = self.thickness or max(5, int(radius * 0.14))
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
         ctx.draw_ring_gauge(
             center,
             radius - thickness,
@@ -305,12 +336,15 @@ class Ring(Component):
 
 @dataclass
 class Arc(Component):
-    """Arc gauge component (270-degree arc)."""
+    """Arc gauge component (270-degree arc).
+
+    Tinted track by default when the theme allows.
+    """
 
     percent: float
-    color: Color = (0, 255, 255)
-    background: Color | None = None  # None = use theme.bar_background
-    width: int = 8
+    color: Color = THEME_PRIMARY  # Theme-aware; resolves at render time
+    background: Color | None = None  # None = use theme tinted track
+    width: int | None = None  # None = auto-calculate from size
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         size = min(max_width, max_height)
@@ -320,13 +354,15 @@ class Arc(Component):
         size = min(width, height)
         cx, cy = x + width // 2, y + height // 2
         half = size // 2
-        bg = self.background if self.background is not None else ctx.theme.bar_background
+        bg = self.background if self.background is not None else ctx.track_color(self.color)
+        # Auto thickness scales with arc radius, similar to ring proportions.
+        stroke = self.width if self.width is not None else max(5, int(half * 0.13))
         ctx.draw_arc(
             (cx - half, cy - half, cx + half, cy + half),
             self.percent,
             self.color,
             bg,
-            self.width,
+            stroke,
         )
 
 
@@ -335,7 +371,7 @@ class Sparkline(Component):
     """Sparkline chart component."""
 
     data: list[float]
-    color: Color = (0, 255, 255)
+    color: Color = THEME_PRIMARY  # Theme-aware; resolves at render time
     fill: bool = True
     smooth: bool = True
 
@@ -402,17 +438,6 @@ class Spacer(Component):
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         pass  # Spacers are invisible
-
-
-@dataclass
-class Empty(Component):
-    """Empty component that renders nothing (for conditional rendering)."""
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        return (0, 0)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        pass
 
 
 @dataclass
@@ -698,414 +723,21 @@ class Center(Component):
         self.child.render(ctx, cx, cy, cw, ch)
 
 
-@dataclass
-class Padding(Component):
-    """Adds padding around a child component."""
-
-    child: Component
-    all: int = 0
-    horizontal: int | None = None
-    vertical: int | None = None
-    top: int | None = None
-    right: int | None = None
-    bottom: int | None = None
-    left: int | None = None
-
-    def _get_padding(self) -> tuple[int, int, int, int]:
-        """Return (top, right, bottom, left) padding values."""
-        t = (
-            self.top
-            if self.top is not None
-            else (self.vertical if self.vertical is not None else self.all)
-        )
-        r = (
-            self.right
-            if self.right is not None
-            else (self.horizontal if self.horizontal is not None else self.all)
-        )
-        b = (
-            self.bottom
-            if self.bottom is not None
-            else (self.vertical if self.vertical is not None else self.all)
-        )
-        l_pad = (
-            self.left
-            if self.left is not None
-            else (self.horizontal if self.horizontal is not None else self.all)
-        )
-        return (t, r, b, l_pad)
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        t, r, b, l_pad = self._get_padding()
-        inner_w = max(0, max_width - l_pad - r)  # Clamp to prevent negative
-        inner_h = max(0, max_height - t - b)  # Clamp to prevent negative
-        cw, ch = self.child.measure(ctx, inner_w, inner_h)
-        return (cw + l_pad + r, ch + t + b)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        t, r, b, l_pad = self._get_padding()
-        child_w = max(0, width - l_pad - r)  # Clamp to prevent negative
-        child_h = max(0, height - t - b)  # Clamp to prevent negative
-        if child_w > 0 and child_h > 0:
-            self.child.render(ctx, x + l_pad, y + t, child_w, child_h)
-
-
-# ============================================================================
-# Hierarchy and Priority Components
-# ============================================================================
-
-
-@dataclass
-class FillText(Component):
-    """Text that fills available space while maintaining aspect ratio.
-
-    Primary text fills the container, secondary/tertiary scale proportionally.
-    This is the preferred component for dynamic text sizing.
-
-    Args:
-        text: Text to display
-        hierarchy: Size hierarchy - "primary" fills, "secondary"/"tertiary" scale smaller
-        bold: Whether to use bold font
-        color: Text color
-        max_ratio: Maximum container fill ratio (0.95 = 95% of container)
-        min_size: Minimum font size in pixels
-    """
-
-    text: str
-    hierarchy: Literal["primary", "secondary", "tertiary"] = "primary"
-    bold: bool = False
-    color: Color = THEME_TEXT_PRIMARY
-    max_ratio: float = 0.95
-    min_size: int = 12
-
-    # Scaling ratios relative to primary
-    _RATIOS: dict[str, float] = field(
-        default_factory=lambda: {"primary": 1.0, "secondary": 0.50, "tertiary": 0.30},
-        repr=False,
-    )
-
-    def _get_font(self, ctx: RenderContext, width: int, height: int):
-        """Get font sized for hierarchy and container."""
-        ratio = self._RATIOS.get(self.hierarchy, 1.0)
-
-        # Primary: fit to container
-        if self.hierarchy == "primary":
-            return ctx.fit_text(
-                self.text,
-                max_width=int(width * self.max_ratio),
-                max_height=int(height * self.max_ratio),
-                bold=self.bold,
-            )
-        # Secondary/tertiary: scale from what primary would be
-        primary_font = ctx.fit_text(
-            self.text,
-            max_width=int(width * self.max_ratio),
-            max_height=int(height * self.max_ratio),
-            bold=self.bold,
-        )
-        # Get primary height and scale
-        primary_height = ctx.get_text_size("Hg", primary_font)[1]
-        target_height = max(self.min_size, int(primary_height * ratio))
-        # Get font at target height
-        return ctx.get_font_for_height(target_height, bold=self.bold)
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        font = self._get_font(ctx, max_width, max_height)
-        return ctx.get_text_size(self.text, font)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        font = self._get_font(ctx, width, height)
-        _, text_h = ctx.get_text_size(self.text, font)
-
-        # Check minimum size constraint
-        if text_h < self.min_size:
-            return  # Too small, skip
-
-        # Resolve theme-aware colors
-        resolved_color = _resolve_color(self.color, ctx)
-
-        # Center in container
-        tx = x + width // 2
-        ty = y + height // 2
-        ctx.draw_text(self.text, (tx, ty), font, resolved_color, anchor="mm")
-
-
-@dataclass
-class Prioritized(Component):
-    """Wrapper that adds priority to any component for responsive hiding.
-
-    Use with PriorityColumn or PriorityRow to enable auto-hiding of
-    low-priority elements when space is insufficient.
-
-    Args:
-        child: The component to wrap
-        priority: Display priority (CRITICAL always shows, LOW hides first)
-        min_width: Minimum width needed to show this element
-        min_height: Minimum height needed to show this element
-    """
-
-    child: Component
-    priority: int = 1  # Priority.CRITICAL
-    min_width: int = 0
-    min_height: int = 0
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        return self.child.measure(ctx, max_width, max_height)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        self.child.render(ctx, x, y, width, height)
-
-
-@dataclass
-class PriorityColumn(Component):
-    """Column that auto-hides low-priority children when space is insufficient.
-
-    Children are sorted by priority. Starting from highest priority (CRITICAL),
-    children are allocated space. When remaining space is insufficient for
-    the next child, it and all lower-priority children are hidden.
-
-    Args:
-        children: List of Prioritized components
-        gap: Gap between visible children
-        align: Horizontal alignment of children
-        padding: Padding around all children
-    """
-
-    children: list[Prioritized] = field(default_factory=list)
-    gap: int = 4
-    align: Align = "center"
-    padding: int = 0
-
-    def _filter_visible(self, ctx: RenderContext, width: int, height: int) -> list[Prioritized]:
-        """Determine which children fit based on priority."""
-        if not self.children:
-            return []
-
-        # Sort by priority (lower number = higher priority)
-        sorted_children = sorted(self.children, key=lambda c: c.priority)
-
-        available = height - self.padding * 2
-        visible: list[Prioritized] = []
-        gap_used = 0
-
-        for child in sorted_children:
-            needed_h = child.measure(ctx, width - self.padding * 2, available)[1]
-
-            # Check if child fits with its minimum requirements
-            fits_space = needed_h + gap_used <= available
-            fits_min = (
-                needed_h >= child.min_height and (width - self.padding * 2) >= child.min_width
-            )
-
-            if fits_space and fits_min:
-                visible.append(child)
-                available -= needed_h + self.gap
-                gap_used = self.gap
-            elif child.priority == 1:  # Priority.CRITICAL
-                # Critical elements always show, even if cramped
-                visible.append(child)
-                available -= needed_h + self.gap
-                gap_used = self.gap
-
-        return visible
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        visible = self._filter_visible(ctx, max_width, max_height)
-        if not visible:
-            return (0, 0)
-
-        inner_w = max_width - self.padding * 2
-        total_h = self.padding * 2 + self.gap * max(0, len(visible) - 1)
-        max_w = 0
-
-        for child in visible:
-            w, h = child.measure(ctx, inner_w, max_height)
-            total_h += h
-            max_w = max(max_w, w)
-
-        return (min(max_w + self.padding * 2, max_width), min(total_h, max_height))
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        visible = self._filter_visible(ctx, width, height)
-        if not visible:
-            return
-
-        # Delegate to Column for actual layout
-        Column(
-            children=[c.child for c in visible],
-            gap=self.gap,
-            align=self.align,
-            padding=self.padding,
-            justify="center",
-        ).render(ctx, x, y, width, height)
-
-
-@dataclass
-class PriorityRow(Component):
-    """Row that auto-hides low-priority children when space is insufficient.
-
-    Same as PriorityColumn but for horizontal layout.
-
-    Args:
-        children: List of Prioritized components
-        gap: Gap between visible children
-        align: Vertical alignment of children
-        justify: Horizontal distribution of children
-        padding: Padding around all children
-    """
-
-    children: list[Prioritized] = field(default_factory=list)
-    gap: int = 4
-    align: Align = "center"
-    justify: Justify = "space-between"
-    padding: int = 0
-
-    def _filter_visible(self, ctx: RenderContext, width: int, height: int) -> list[Prioritized]:
-        """Determine which children fit based on priority."""
-        if not self.children:
-            return []
-
-        sorted_children = sorted(self.children, key=lambda c: c.priority)
-
-        available = width - self.padding * 2
-        visible: list[Prioritized] = []
-        gap_used = 0
-
-        for child in sorted_children:
-            needed_w = child.measure(ctx, available, height - self.padding * 2)[0]
-
-            fits_space = needed_w + gap_used <= available
-            fits_min = (
-                needed_w >= child.min_width and (height - self.padding * 2) >= child.min_height
-            )
-
-            if (fits_space and fits_min) or child.priority == 1:
-                visible.append(child)
-                available -= needed_w + self.gap
-                gap_used = self.gap
-
-        return visible
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        visible = self._filter_visible(ctx, max_width, max_height)
-        if not visible:
-            return (0, 0)
-
-        inner_h = max_height - self.padding * 2
-        total_w = self.padding * 2 + self.gap * max(0, len(visible) - 1)
-        max_h = 0
-
-        for child in visible:
-            w, h = child.measure(ctx, max_width, inner_h)
-            total_w += w
-            max_h = max(max_h, h)
-
-        return (min(total_w, max_width), min(max_h + self.padding * 2, max_height))
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        visible = self._filter_visible(ctx, width, height)
-        if not visible:
-            return
-
-        Row(
-            children=[c.child for c in visible],
-            gap=self.gap,
-            align=self.align,
-            justify=self.justify,
-            padding=self.padding,
-        ).render(ctx, x, y, width, height)
-
-
-@dataclass
-class IconValueDisplay(Component):
-    """Icon with value and label - handles layout internally for proper sizing.
-
-    Vertical layout: Icon at top, value in middle (fills space), label at bottom.
-    All sizing is computed together to ensure proper proportions.
-    """
-
-    icon: str
-    value: str
-    label: str
-    icon_color: tuple[int, int, int] = THEME_TEXT_PRIMARY
-    value_color: tuple[int, int, int] = THEME_TEXT_PRIMARY
-    label_color: tuple[int, int, int] = THEME_TEXT_SECONDARY
-    icon_size: int | None = None
-
-    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
-        return (max_width, max_height)
-
-    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        """Render icon, value, and label with proper proportions."""
-        padding = int(width * 0.06)
-        inner_width = width - padding * 2
-        inner_height = height - padding * 2
-
-        # Resolve theme-aware colors
-        icon_color = _resolve_color(self.icon_color, ctx)
-        value_color = _resolve_color(self.value_color, ctx)
-        label_color = _resolve_color(self.label_color, ctx)
-
-        # Calculate sizes based on container
-        icon_size = self.icon_size or max(16, min(48, int(inner_height * 0.25)))
-        label_height = int(inner_height * 0.15)
-        value_height = inner_height - icon_size - label_height - 12  # gaps
-
-        # Vertical positions (centered)
-        total_content = icon_size + value_height + label_height + 12
-        start_y = y + padding + (inner_height - total_content) // 2
-
-        center_x = x + width // 2
-        current_y = start_y
-
-        # Draw icon at top
-        ctx.draw_icon(
-            self.icon,
-            (center_x - icon_size // 2, current_y),
-            size=icon_size,
-            color=icon_color,
-        )
-        current_y += icon_size + 6
-
-        # Draw value (fills available space)
-        value_font = ctx.fit_text(
-            self.value,
-            max_width=int(inner_width * 0.95),
-            max_height=int(value_height * 0.90),
-            bold=True,
-        )
-        ctx.draw_text(
-            self.value,
-            (center_x, current_y + value_height // 2),
-            font=value_font,
-            color=value_color,
-            anchor="mm",
-        )
-        current_y += value_height + 6
-
-        # Draw label at bottom
-        label_font = ctx.fit_text(
-            self.label.upper(),
-            max_width=int(inner_width * 0.90),
-            max_height=int(label_height * 0.90),
-            bold=False,
-        )
-        ctx.draw_text(
-            self.label.upper(),
-            (center_x, current_y + label_height // 2),
-            font=label_font,
-            color=label_color,
-            anchor="mm",
-        )
-
-
 # ============================================================================
 # Export all components
 # ============================================================================
 
 __all__ = [
+    "THEME_ERROR",
+    "THEME_INFO",
+    "THEME_MUTED",
+    "THEME_PRIMARY",
+    "THEME_SECONDARY",
+    "THEME_SUCCESS",
     "THEME_TEXT_PRIMARY",
     "THEME_TEXT_SECONDARY",
+    "THEME_TEXT_TERTIARY",
+    "THEME_WARNING",
     "Adaptive",
     "Align",
     "Arc",
@@ -1114,21 +746,15 @@ __all__ = [
     "Color",
     "Column",
     "Component",
-    "Empty",
-    "FillText",
     "Flex",
     "Icon",
-    "IconValueDisplay",
     "Justify",
-    "Padding",
     "Panel",
-    "Prioritized",
-    "PriorityColumn",
-    "PriorityRow",
     "Ring",
     "Row",
     "Spacer",
     "Sparkline",
     "Stack",
     "Text",
+    "VerticalBar",
 ]

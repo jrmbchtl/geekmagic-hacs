@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from ..const import PLACEHOLDER_NAME, PLACEHOLDER_VALUE
 from .base import Widget, WidgetConfig
 from .components import (
+    THEME_PRIMARY,
+    THEME_TEXT_PRIMARY,
     THEME_TEXT_SECONDARY,
     Color,
     Column,
@@ -33,29 +35,13 @@ class LabelValueRow(Component):
     label: str
     value: str
     label_color: Color = THEME_TEXT_SECONDARY
-    value_color: Color = (0, 255, 255)
+    value_color: Color = THEME_PRIMARY  # Theme-aware sentinel
     gap: int = 8  # Minimum gap between label and value
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         font = ctx.get_font("small", bold=False)
         _, h = ctx.get_text_size("Hg", font)
         return (max_width, h)
-
-    def _truncate_to_width(self, ctx: RenderContext, text: str, font: Any, max_width: int) -> str:
-        """Truncate text with ellipsis to fit within max_width."""
-        if max_width <= 0:
-            return ""
-        text_width, _ = ctx.get_text_size(text, font)
-        if text_width <= max_width:
-            return text
-        ellipsis = "…"
-        while len(text) > 1:
-            text = text[:-1]
-            test_text = text + ellipsis
-            text_width, _ = ctx.get_text_size(test_text, font)
-            if text_width <= max_width:
-                return test_text
-        return ellipsis
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         label_font = ctx.get_font("small", bold=False)
@@ -81,20 +67,18 @@ class LabelValueRow(Component):
             # value carries the actual information, and "Arr… 5 m…" is worse
             # than just "5 min".
             display_label = ""
-            display_value = self._truncate_to_width(ctx, self.value, value_font, width)
+            display_value = ctx.truncate_to_width(self.value, value_font, width)
         elif value_width <= available:
             # Value fits in full; give the rest to a truncated label.
-            display_label = self._truncate_to_width(
-                ctx, self.label, label_font, available - value_width
-            )
+            display_label = ctx.truncate_to_width(self.label, label_font, available - value_width)
             display_value = self.value
         else:
             # Value doesn't fit either — give value 60% of available width,
             # label 40%, and truncate both.
             value_max = max(int(available * 0.60), available - label_width)
             label_max = available - value_max
-            display_label = self._truncate_to_width(ctx, self.label, label_font, label_max)
-            display_value = self._truncate_to_width(ctx, self.value, value_font, value_max)
+            display_label = ctx.truncate_to_width(self.label, label_font, label_max)
+            display_value = ctx.truncate_to_width(self.value, value_font, value_max)
 
         # Draw label (left-aligned)
         if display_label:
@@ -135,12 +119,13 @@ class AttributeListDisplay(Component):
         # At narrow widths the title eats a row that would be better spent
         # on actual data; drop it.
         show_title = bool(self.title) and width >= 100
+        title = self.title or ""
 
         rows: list[Component] = []
         if show_title:
             rows.append(
                 Text(
-                    text=self.title.upper(),
+                    text=title.upper(),
                     font="small",
                     color=THEME_TEXT_SECONDARY,
                     align="start",
@@ -200,7 +185,14 @@ class AttributeListWidget(Widget):
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:
         """Render the attribute list widget."""
         entity = state.entity
-        color = self.config.color or ctx.theme.get_accent_color(self.config.slot)
+        # Per design system: list-row values default to text_primary (white)
+        # — they're "values", not gauge accents. Users (or per-attribute
+        # config) can still tint individual rows by passing an explicit
+        # `color`. self.config.color overrides the default for the whole
+        # widget; the slot accent is only used as a final fallback when
+        # the widget config explicitly marks the colour as
+        # accent-controlled (kept for backwards compat).
+        default_color: Color = self.config.color or THEME_TEXT_PRIMARY
 
         items: list[tuple[str, str, Color]] = []
 
@@ -209,14 +201,14 @@ class AttributeListWidget(Widget):
             if isinstance(attr_config, dict):
                 key = attr_config.get("key", "")
                 label = attr_config.get("label", key)
-                item_color = attr_config.get("color", color)
+                item_color = attr_config.get("color", default_color)
                 if isinstance(item_color, list):
                     item_color = tuple(item_color)
             else:
                 # Simple string format: use attribute name as both key and label
                 key = str(attr_config)
                 label = key
-                item_color = color
+                item_color = default_color
 
             # Get value from entity
             if entity is None:

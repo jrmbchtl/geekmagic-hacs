@@ -10,10 +10,8 @@ from custom_components.geekmagic.widgets.components import (
     Adaptive,
     Bar,
     Column,
-    Empty,
     Flex,
     Icon,
-    Padding,
     Ring,
     Row,
     Spacer,
@@ -177,17 +175,6 @@ class TestSpacer:
         mock_ctx.draw_icon.assert_not_called()
 
 
-class TestEmpty:
-    """Tests for Empty component."""
-
-    def test_measure(self, mock_ctx: MagicMock) -> None:
-        """Test empty component measures as zero."""
-        empty = Empty()
-        w, h = empty.measure(mock_ctx, 100, 80)
-        assert w == 0
-        assert h == 0
-
-
 class TestRow:
     """Tests for Row layout component."""
 
@@ -273,31 +260,6 @@ class TestAdaptive:
         adaptive = Adaptive(children=[Text("A"), Text("B")], gap=4, padding=0)
         # Total width = 40 + 4 + 40 = 84, doesn't fit in 50
         adaptive.render(mock_ctx, 0, 0, 50, 100)
-
-
-class TestPadding:
-    """Tests for Padding component."""
-
-    def test_measure_with_all(self, mock_ctx: MagicMock) -> None:
-        """Test padding with uniform padding."""
-        padded = Padding(child=Text("Hi"), all=10)
-        w, h = padded.measure(mock_ctx, 200, 100)
-        assert w == 40 + 20  # text + padding*2
-        assert h == 16 + 20
-
-    def test_measure_with_horizontal_vertical(self, mock_ctx: MagicMock) -> None:
-        """Test padding with separate horizontal/vertical."""
-        padded = Padding(child=Text("Hi"), horizontal=20, vertical=10)
-        w, h = padded.measure(mock_ctx, 200, 100)
-        assert w == 40 + 40  # text + horizontal*2
-        assert h == 16 + 20  # text + vertical*2
-
-    def test_measure_with_individual(self, mock_ctx: MagicMock) -> None:
-        """Test padding with individual sides."""
-        padded = Padding(child=Text("Hi"), top=5, right=10, bottom=15, left=20)
-        w, h = padded.measure(mock_ctx, 200, 100)
-        assert w == 40 + 10 + 20  # text + right + left
-        assert h == 16 + 5 + 15  # text + top + bottom
 
 
 class _SizedComponent(Bar):
@@ -441,45 +403,6 @@ class TestTextAutoFit:
         # weird-font (200) doesn't fit, small (50) does → picks small.
         font = text._pick_font(ctx, max_width=80)
         assert font is ctx.get_font("small")
-
-
-class TestTextTruncate:
-    @pytest.fixture
-    def ctx(self) -> MagicMock:
-        ctx = MagicMock()
-        ctx.theme.text_primary = (255, 255, 255)
-        ctx.theme.text_secondary = (150, 150, 150)
-        ctx.get_font.return_value = MagicMock()
-        # Each character is 5 px wide, "…" is 4 px.
-        ctx.get_text_size.side_effect = lambda text, font: (
-            (4 if text == "…" else len(text) * 5),
-            10,
-        )
-        return ctx
-
-    def test_returns_text_unchanged_when_fits(self, ctx: MagicMock) -> None:
-        text = Text(text="hello")
-        out = text._truncate_text(ctx, "hello", ctx.get_font(), max_width=100)
-        assert out == "hello"
-
-    def test_returns_ellipsis_for_zero_width(self, ctx: MagicMock) -> None:
-        text = Text(text="hello")
-        assert text._truncate_text(ctx, "hello", ctx.get_font(), max_width=0) == ""
-
-    def test_returns_ellipsis_when_single_char_too_wide(self, ctx: MagicMock) -> None:
-        # "M" is 5 wide, max_width 3 — loop body never executes (len==1),
-        # falls through to the bare ellipsis return.
-        text = Text(text="M")
-        out = text._truncate_text(ctx, "M", ctx.get_font(), max_width=3)
-        assert out == "…"
-
-    def test_truncates_with_ellipsis(self, ctx: MagicMock) -> None:
-        # "Downtown" is 40 wide; budget 24 should give "Down…" (5 chars at
-        # 4 wide each + 4 ellipsis = 24).
-        text = Text(text="Downtown")
-        out = text._truncate_text(ctx, "Downtown", ctx.get_font(), max_width=24)
-        assert out.endswith("…")
-        assert len(out) <= len("Downtown")
 
 
 class TestAdaptiveMeasure:

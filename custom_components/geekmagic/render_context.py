@@ -6,7 +6,6 @@ container (0, 0 to width, height) instead of absolute canvas coordinates.
 
 from __future__ import annotations
 
-import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -59,13 +58,13 @@ def get_size_category(height: int) -> SizeCategory:
 
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from PIL import Image, ImageDraw
     from PIL.ImageFont import FreeTypeFont, ImageFont
 
     from .renderer import Renderer
     from .widgets.theme import Theme
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class RenderContext:
@@ -186,17 +185,13 @@ class RenderContext:
     def _resolve_color(self, color: tuple[int, int, int]) -> tuple[int, int, int]:
         """Resolve theme-aware color sentinels to actual colors.
 
-        Components use sentinel values like (-1, -1, -1) for THEME_TEXT_PRIMARY
-        and (-2, -2, -2) for THEME_TEXT_SECONDARY. This method resolves them
-        to actual theme colors so they work correctly when passed directly
-        to drawing methods.
+        Widgets construct components with sentinel values like THEME_PRIMARY
+        or THEME_WARNING (negative-channel tuples — see widgets.colors). This
+        method swaps them for the active theme's colors at draw time.
         """
-        if color[0] < 0:
-            if color == (-1, -1, -1):  # THEME_TEXT_PRIMARY
-                return self.theme.text_primary
-            if color == (-2, -2, -2):  # THEME_TEXT_SECONDARY
-                return self.theme.text_secondary
-        return color
+        from .widgets.colors import resolve_theme_color
+
+        return resolve_theme_color(color, self.theme)
 
     def _abs_point(self, x: int, y: int) -> tuple[int, int]:
         """Convert local point to absolute canvas coordinates."""
@@ -207,68 +202,6 @@ class RenderContext:
         x1, y1, x2, y2 = rect
         return (self._x1 + x1, self._y1 + y1, self._x1 + x2, self._y1 + y2)
 
-    def _check_point_bounds(self, x: int, y: int, context: str = "") -> None:
-        """Log warning if point is outside widget bounds.
-
-        Args:
-            x: X coordinate in local space
-            y: Y coordinate in local space
-            context: Description of the operation for logging
-        """
-        if x < 0 or x > self.width or y < 0 or y > self.height:
-            _LOGGER.debug(
-                "Drawing outside widget bounds: %s at (%d, %d), bounds=(0, 0, %d, %d)",
-                context or "operation",
-                x,
-                y,
-                self.width,
-                self.height,
-            )
-
-    def _check_rect_bounds(self, rect: tuple[int, int, int, int], context: str = "") -> None:
-        """Log warning if rect extends outside widget bounds.
-
-        Args:
-            rect: (x1, y1, x2, y2) in local coordinates
-            context: Description of the operation for logging
-        """
-        x1, y1, x2, y2 = rect
-        if x1 < 0 or y1 < 0 or x2 > self.width or y2 > self.height:
-            _LOGGER.debug(
-                "Drawing outside widget bounds: %s rect=(%d, %d, %d, %d), bounds=(0, 0, %d, %d)",
-                context or "operation",
-                x1,
-                y1,
-                x2,
-                y2,
-                self.width,
-                self.height,
-            )
-
-    def is_point_in_bounds(self, x: int, y: int) -> bool:
-        """Check if a point is within widget bounds.
-
-        Args:
-            x: X coordinate in local space
-            y: Y coordinate in local space
-
-        Returns:
-            True if point is within bounds
-        """
-        return 0 <= x <= self.width and 0 <= y <= self.height
-
-    def is_rect_in_bounds(self, rect: tuple[int, int, int, int]) -> bool:
-        """Check if a rect is fully within widget bounds.
-
-        Args:
-            rect: (x1, y1, x2, y2) in local coordinates
-
-        Returns:
-            True if rect is fully within bounds
-        """
-        x1, y1, x2, y2 = rect
-        return x1 >= 0 and y1 >= 0 and x2 <= self.width and y2 <= self.height
-
     # =========================================================================
     # Font Methods
     # =========================================================================
@@ -278,6 +211,7 @@ class RenderContext:
         size_name: str = "secondary",
         bold: bool = False,
         adjust: int = 0,
+        semibold: bool = False,
     ) -> FreeTypeFont | ImageFont:
         """Get font scaled for this context's height.
 
@@ -287,12 +221,19 @@ class RenderContext:
                 - Legacy: "tiny", "small", "regular", "medium", "large", "xlarge", "huge"
             bold: Whether to use bold variant
             adjust: Relative size adjustment (-2 to +2). Each step is ~15% size change.
+            semibold: Use SemiBold weight (between regular and bold).
+                Takes precedence over `bold` and uses the rounded family.
 
         Returns:
             Font scaled appropriately for the container size
         """
         return self._renderer.get_scaled_font(
-            size_name, self._scaled_height, bold=bold, adjust=adjust
+            size_name,
+            self._scaled_height,
+            bold=bold,
+            adjust=adjust,
+            rounded=self.theme.rounded_font,
+            semibold=semibold,
         )
 
     def fit_text(
@@ -331,27 +272,8 @@ class RenderContext:
             max_width=scaled_width,
             max_height=scaled_height,
             bold=bold,
+            rounded=self.theme.rounded_font,
         )
-
-    def get_font_for_height(
-        self,
-        target_height: int,
-        bold: bool = False,
-    ) -> FreeTypeFont | ImageFont:
-        """Get a font at a specific target height in unscaled pixels.
-
-        Useful for scaling fonts proportionally from a measured size.
-
-        Args:
-            target_height: Desired font height in unscaled pixels
-            bold: Whether to use bold variant
-
-        Returns:
-            Font at approximately the target height
-        """
-        # Scale for supersampling
-        scaled_height = target_height * self._renderer.scale
-        return self._renderer.get_scaled_font("primary", scaled_height, bold=bold)
 
     def get_text_size(
         self,
@@ -370,6 +292,31 @@ class RenderContext:
         if font is None:
             font = self.get_font("regular")
         return self._renderer.get_text_size(text, font)
+
+    def truncate_to_width(
+        self,
+        text: str,
+        font: FreeTypeFont | ImageFont,
+        max_width: int,
+    ) -> str:
+        """Trim ``text`` with a trailing ellipsis until it fits ``max_width``.
+
+        Pixel-accurate (uses the renderer's text metrics) — used by widgets
+        that lay out text in a fixed slot rather than through ``fit_text``.
+        Returns ``""`` if ``max_width <= 0``.
+        """
+        if max_width <= 0:
+            return ""
+        if self._renderer.get_text_size(text, font)[0] <= max_width:
+            return text
+        ellipsis = "…"
+        truncated = text
+        while len(truncated) > 1:
+            truncated = truncated[:-1]
+            candidate = truncated + ellipsis
+            if self._renderer.get_text_size(candidate, font)[0] <= max_width:
+                return candidate
+        return ellipsis
 
     # =========================================================================
     # Drawing Methods - all take LOCAL coordinates
@@ -416,7 +363,13 @@ class RenderContext:
             width: Outline width
         """
         abs_rect = self._abs_rect(rect)
-        self._renderer.draw_rect(self._draw, abs_rect, fill=fill, outline=outline, width=width)
+        self._renderer.draw_rect(
+            self._draw,
+            abs_rect,
+            fill=self._resolve_color(fill) if fill is not None else None,
+            outline=self._resolve_color(outline) if outline is not None else None,
+            width=width,
+        )
 
     def draw_rounded_rect(
         self,
@@ -437,7 +390,12 @@ class RenderContext:
         """
         abs_rect = self._abs_rect(rect)
         self._renderer.draw_rounded_rect(
-            self._draw, abs_rect, radius=radius, fill=fill, outline=outline, width=width
+            self._draw,
+            abs_rect,
+            radius=radius,
+            fill=self._resolve_color(fill) if fill is not None else None,
+            outline=self._resolve_color(outline) if outline is not None else None,
+            width=width,
         )
 
     def draw_panel(
@@ -457,7 +415,11 @@ class RenderContext:
         """
         abs_rect = self._abs_rect(rect)
         self._renderer.draw_panel(
-            self._draw, abs_rect, background=background, border_color=border_color, radius=radius
+            self._draw,
+            abs_rect,
+            background=self._resolve_color(background),
+            border_color=self._resolve_color(border_color) if border_color is not None else None,
+            radius=radius,
         )
 
     def draw_bar(
@@ -476,7 +438,13 @@ class RenderContext:
             background: Background color
         """
         abs_rect = self._abs_rect(rect)
-        self._renderer.draw_bar(self._draw, abs_rect, percent, color=color, background=background)
+        self._renderer.draw_bar(
+            self._draw,
+            abs_rect,
+            percent,
+            color=self._resolve_color(color),
+            background=self._resolve_color(background),
+        )
 
     def draw_arc(
         self,
@@ -497,7 +465,12 @@ class RenderContext:
         """
         abs_rect = self._abs_rect(rect)
         self._renderer.draw_arc(
-            self._draw, abs_rect, percent, color=color, background=background, width=width
+            self._draw,
+            abs_rect,
+            percent,
+            color=self._resolve_color(color),
+            background=self._resolve_color(background),
+            width=width,
         )
 
     def draw_ring_gauge(
@@ -525,15 +498,15 @@ class RenderContext:
             abs_center,
             radius,
             percent,
-            color=color,
-            background=background,
+            color=self._resolve_color(color),
+            background=self._resolve_color(background),
             width=width,
         )
 
     def draw_sparkline(
         self,
         rect: tuple[int, int, int, int],
-        data: list[float],
+        data: Sequence[float],
         color: tuple[int, int, int],
         fill: bool = True,
         smooth: bool = True,
@@ -544,14 +517,29 @@ class RenderContext:
         Args:
             rect: (x1, y1, x2, y2) in local coordinates
             data: List of data points
-            color: Line color
+            color: Line color (also used for the fill tint when gradient=False)
             fill: Whether to fill area under the line
             smooth: Whether to use spline interpolation
-            gradient: Whether to use gradient fill (cool colors for low, warm for high)
+            gradient: When True, the fill blends between theme.info (low
+                values) and theme.warning (high values) so the fill picks
+                up the active theme's palette instead of hardcoded
+                blue/orange.
         """
         abs_rect = self._abs_rect(rect)
+        # Resolve any theme-color sentinels passed in for `color` so the
+        # underlying renderer (which doesn't know about the theme) gets a
+        # concrete RGB tuple.
+        resolved_color = self._resolve_color(color)
         self._renderer.draw_sparkline(
-            self._draw, abs_rect, data, color=color, fill=fill, smooth=smooth, gradient=gradient
+            self._draw,
+            abs_rect,
+            data,
+            color=resolved_color,
+            fill=fill,
+            smooth=smooth,
+            gradient=gradient,
+            gradient_cool=self.theme.info if gradient else None,
+            gradient_warm=self.theme.warning if gradient else None,
         )
 
     def draw_timeline_bar(
@@ -578,8 +566,8 @@ class RenderContext:
             self._draw,
             abs_rect,
             data,
-            on_color=on_color,
-            off_color=off_color or COLOR_GRAY,
+            on_color=self._resolve_color(on_color),
+            off_color=self._resolve_color(off_color or COLOR_GRAY),
         )
 
     def draw_ellipse(
@@ -598,7 +586,13 @@ class RenderContext:
             width: Outline width
         """
         abs_rect = self._abs_rect(rect)
-        self._renderer.draw_ellipse(self._draw, abs_rect, fill=fill, outline=outline, width=width)
+        self._renderer.draw_ellipse(
+            self._draw,
+            abs_rect,
+            fill=self._resolve_color(fill) if fill is not None else None,
+            outline=self._resolve_color(outline) if outline is not None else None,
+            width=width,
+        )
 
     def draw_icon(
         self,
@@ -633,11 +627,39 @@ class RenderContext:
             width: Line width
         """
         abs_xy = [self._abs_point(*p) for p in xy]
-        self._renderer.draw_line(self._draw, abs_xy, fill=fill, width=width)
+        self._renderer.draw_line(
+            self._draw,
+            abs_xy,
+            fill=self._resolve_color(fill) if fill is not None else None,
+            width=width,
+        )
+
+    def draw_gradient_fade(
+        self,
+        rect: tuple[int, int, int, int],
+        color: tuple[int, int, int] = (0, 0, 0),
+        direction: str = "down",
+    ) -> None:
+        """Draw a vertical alpha-faded gradient onto the canvas.
+
+        Used for watchOS-style soft fades over album art / images.
+
+        Args:
+            rect: (x1, y1, x2, y2) in local coordinates
+            color: Gradient color (typically black)
+            direction: "down" (transparent → opaque) or "up" (opaque → transparent)
+        """
+        abs_rect = self._abs_rect(rect)
+        self._renderer.draw_gradient_fade(
+            self._draw,
+            abs_rect,
+            color=self._resolve_color(color),
+            direction=direction,
+        )
 
     def draw_image(
         self,
-        source: Image.Image,  # type: ignore[name-defined]
+        source: Image.Image,
         rect: tuple[int, int, int, int] | None = None,
         preserve_aspect: bool = True,
         fit_mode: str | None = None,
@@ -659,19 +681,118 @@ class RenderContext:
             self._draw, source, abs_rect, preserve_aspect=preserve_aspect, fit_mode=fit_mode
         )
 
-    # =========================================================================
-    # Color Utilities
-    # =========================================================================
-
-    def dim_color(self, color: tuple[int, int, int], factor: float = 0.3) -> tuple[int, int, int]:
-        """Dim a color by a factor."""
-        return self._renderer.dim_color(color, factor)
-
-    def blend_color(
+    def tint_at(
         self,
-        color1: tuple[int, int, int],
-        color2: tuple[int, int, int],
-        factor: float = 0.5,
+        color: tuple[int, int, int],
+        opacity: float,
+        background: tuple[int, int, int] | None = None,
     ) -> tuple[int, int, int]:
-        """Blend two colors."""
-        return self._renderer.blend_color(color1, color2, factor)
+        """Mix `color` at `opacity` over `background` (theme background by default)."""
+        bg = background if background is not None else self.theme.background
+        return self._renderer.tint_at(color, opacity, background=bg)
+
+    def track_color(self, tint: tuple[int, int, int]) -> tuple[int, int, int]:
+        """Compute the bar/ring/arc track color for a given tint, honoring theme.
+
+        watchOS-style themes return a soft tint of the accent color; classic
+        themes can return a flat gray via Theme.tint_track=False.
+        """
+        if self.theme.tint_track:
+            return self._renderer.tint_at(
+                self._resolve_color(tint),
+                self.theme.tint_track_opacity,
+                self.theme.background,
+            )
+        return self.theme.bar_background
+
+    # =========================================================================
+    # Semantic Drawing Helpers (watchOS-style hierarchy)
+    # =========================================================================
+
+    def draw_label(
+        self,
+        text: str,
+        position: tuple[int, int],
+        color: tuple[int, int, int] | None = None,
+        anchor: str = "lt",
+        size: str = "small",
+        adjust: int = 0,
+        uppercase: bool = True,
+        track: int = 0,
+        max_width: int | None = None,
+    ) -> tuple[int, int]:
+        """Draw a watchOS-style caption label.
+
+        Defaults to uppercase, secondary color, fixed-size legacy 'small'
+        font (≈14px) — small enough to never overflow even in big cells,
+        large enough to remain readable. Tracking is OFF by default
+        because per-glyph tracking inflates width by ~5-10% and tends to
+        truncate longer labels; callers can opt in with track>0 when
+        they have width budget.
+
+        Args:
+            text: Label text (will be uppercased unless uppercase=False)
+            position: (x, y) anchor point in local coordinates
+            color: Override color (default = theme.text_secondary)
+            anchor: PIL text anchor (e.g. "lt", "lm", "rm")
+            size: Font size name (default "small" — fixed legacy size)
+            adjust: Relative size adjustment for the label font
+            uppercase: Convert to uppercase
+            track: Letter-spacing in px between glyphs. Defaults to 0
+                (no tracking). Tracking is auto-dropped if it would
+                overflow max_width.
+            max_width: Width budget. Rendered text is truncated with an
+                ellipsis when it exceeds this. Defaults to ~95% of widget
+                width.
+
+        Returns:
+            (width, height) of rendered text in unscaled px
+        """
+        if uppercase:
+            text = text.upper()
+        if max_width is None:
+            max_width = int(self.width * 0.95)
+
+        font = self.get_font(size, adjust=adjust)
+        c = color if color is not None else self.theme.text_secondary
+
+        # Use full-string measurement (accurate, accounts for glyph bearings).
+        full_w = self.get_text_size(text, font=font)[0]
+        if full_w > max_width:
+            ellipsis = "…"
+            t = text
+            while len(t) > 1 and self.get_text_size(t + ellipsis, font=font)[0] > max_width:
+                t = t[:-1]
+            text = (t + ellipsis) if len(t) >= 1 else ellipsis
+            full_w = self.get_text_size(text, font=font)[0]
+            track = 0  # No tracking on truncated labels
+        elif track > 0 and full_w + track * (len(text) - 1) > max_width:
+            track = 0  # Drop tracking if it would push us past the budget
+
+        if track <= 0 or len(text) <= 1:
+            self.draw_text(text, position, font=font, color=c, anchor=anchor)
+            return self.get_text_size(text, font=font)
+
+        # Glyph-by-glyph render with `track` px between to simulate letter-spacing.
+        widths = [self.get_text_size(ch, font=font)[0] for ch in text]
+        total_w = sum(widths) + track * (len(text) - 1)
+        h = self.get_text_size("M", font=font)[1]
+
+        x, y = position
+        ax = anchor[0] if anchor else "l"
+        ay = anchor[1] if len(anchor) > 1 else "t"
+        if ax == "m":
+            x = x - total_w // 2
+        elif ax == "r":
+            x = x - total_w
+        if ay == "m":
+            y = y - h // 2
+        elif ay == "b":
+            y = y - h
+        elif ay == "s":
+            y = y - int(h * 0.85)
+
+        for i, ch in enumerate(text):
+            self.draw_text(ch, (x, y), font=font, color=c, anchor="lt")
+            x += widths[i] + track
+        return total_w, h

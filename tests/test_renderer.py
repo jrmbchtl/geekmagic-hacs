@@ -402,25 +402,6 @@ class TestRenderer:
         assert rot_0 != rot_270
         assert rot_90 != rot_180
 
-    def test_dim_color(self):
-        """Test color dimming."""
-        renderer = Renderer()
-
-        white = (255, 255, 255)
-        dimmed = renderer.dim_color(white, factor=0.5)
-
-        assert dimmed == (127, 127, 127)
-
-    def test_blend_color(self):
-        """Test color blending."""
-        renderer = Renderer()
-
-        color1 = (0, 0, 0)
-        color2 = (255, 255, 255)
-        blended = renderer.blend_color(color1, color2, factor=0.5)
-
-        assert blended == (127, 127, 127)
-
     def test_draw_ring_gauge(self):
         """Test drawing ring gauge."""
         renderer = Renderer()

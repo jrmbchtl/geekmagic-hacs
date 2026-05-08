@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..const import COLOR_DARK_GRAY
 from .base import Widget, WidgetConfig
 from .component_helpers import ArcGauge, BarGauge, RingGauge
 from .components import Component
@@ -12,27 +11,7 @@ from .helpers import calculate_percent, format_value_with_unit
 
 if TYPE_CHECKING:
     from ..render_context import RenderContext
-    from .state import EntityState, WidgetState
-
-
-def _extract_numeric(entity: EntityState | None, attribute: str | None = None) -> float:
-    """Extract numeric value from entity state."""
-    if entity is None:
-        return 0.0
-    value = entity.get(attribute) if attribute else entity.state
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _resolve_label(config: WidgetConfig, entity: EntityState | None) -> str:
-    """Get label from config or entity friendly_name."""
-    if config.label:
-        return config.label
-    if entity:
-        return entity.friendly_name
-    return ""
+    from .state import WidgetState
 
 
 class GaugeWidget(Widget):
@@ -51,6 +30,16 @@ class GaugeWidget(Widget):
                 "options": ["bar", "ring", "arc"],
                 "default": "bar",
             },
+            {
+                # Only meaningful when style="bar". Auto picks based on
+                # cell shape (vertical for tall+narrow, stacked for
+                # square hero cells, compact for everything else).
+                "key": "orientation",
+                "type": "select",
+                "label": "Bar Orientation",
+                "options": ["auto", "compact", "stacked", "vertical"],
+                "default": "auto",
+            },
             {"key": "min", "type": "number", "label": "Minimum", "default": 0},
             {"key": "max", "type": "number", "label": "Maximum", "default": 100},
             {"key": "unit", "type": "text", "label": "Unit Override"},
@@ -65,6 +54,8 @@ class GaugeWidget(Widget):
         """Initialize the gauge widget."""
         super().__init__(config)
         self.style = config.options.get("style", "bar")  # bar, ring, arc
+        # auto / compact / stacked / vertical — only meaningful for bar style.
+        self.orientation = config.options.get("orientation", "auto")
         self.min_value = config.options.get("min", 0)
         self.max_value = config.options.get("max", 100)
         self.icon = config.options.get("icon")
@@ -81,14 +72,22 @@ class GaugeWidget(Widget):
             return None
 
         sorted_thresholds = sorted(self.color_thresholds, key=lambda t: t.get("value", 0))
-        matching_color = None
+        matching_color: tuple[int, int, int] | None = None
         for threshold in sorted_thresholds:
             threshold_value = threshold.get("value", 0)
             threshold_color = threshold.get("color")
-            if value >= threshold_value and threshold_color:
-                matching_color = tuple(threshold_color)
+            if (
+                value >= threshold_value
+                and isinstance(threshold_color, list | tuple)
+                and len(threshold_color) == 3
+            ):
+                matching_color = (
+                    int(threshold_color[0]),
+                    int(threshold_color[1]),
+                    int(threshold_color[2]),
+                )
 
-        return matching_color  # type: ignore[return-value]
+        return matching_color
 
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:
         """Render the gauge widget.
@@ -103,7 +102,7 @@ class GaugeWidget(Widget):
         entity = state.entity
 
         # Extract numeric value
-        value = _extract_numeric(entity, self.attribute)
+        value = entity.numeric(self.attribute) if entity is not None else 0.0
         display_value = f"{value:.0f}" if entity is not None else "--"
 
         # Get unit from entity if not configured
@@ -115,7 +114,7 @@ class GaugeWidget(Widget):
         percent = calculate_percent(value, self.min_value, self.max_value)
 
         # Get label
-        name = _resolve_label(self.config, entity)
+        name = self.label_for(entity)
 
         # Determine color
         threshold_color = self._get_threshold_color(value)
@@ -124,27 +123,16 @@ class GaugeWidget(Widget):
         # Format value with unit
         value_text = format_value_with_unit(display_value, unit) if self.show_value else ""
 
+        # Track color stays None so the theme's tinted track applies
         if self.style == "ring":
-            return RingGauge(
-                percent=percent,
-                value=value_text,
-                label=name,
-                color=color,
-                background=COLOR_DARK_GRAY,
-            )
+            return RingGauge(percent=percent, value=value_text, label=name, color=color)
         if self.style == "arc":
-            return ArcGauge(
-                percent=percent,
-                value=value_text,
-                label=name,
-                color=color,
-                background=COLOR_DARK_GRAY,
-            )
+            return ArcGauge(percent=percent, value=value_text, label=name, color=color)
         return BarGauge(
             percent=percent,
             value=value_text,
             label=name,
             color=color,
             icon=self.icon,
-            background=COLOR_DARK_GRAY,
+            mode=self.orientation,
         )

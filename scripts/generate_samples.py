@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from custom_components.geekmagic.widgets.state import EntityState, WidgetState
 
@@ -186,6 +186,15 @@ def save_image(renderer: Renderer, img: Image.Image, name: str, output_dir: Path
     """Save the rendered image to disk."""
     final = renderer.finalize(img)
     output_path = output_dir / f"{name}.png"
+    if output_path.exists():
+        with Image.open(output_path) as existing_img:
+            existing = existing_img.convert(final.mode)
+            if (
+                existing.size == final.size
+                and ImageChops.difference(existing, final).getbbox() is None
+            ):
+                print(f"Unchanged: {output_path}")
+                return
     final.save(output_path)
     print(f"Generated: {output_path}")
 
@@ -1087,9 +1096,12 @@ def generate_widget_sizes(renderer: Renderer, output_dir: Path) -> None:
                 # Single widget using hero layout with minimal footer
                 layout = HeroLayout(footer_slots=1, hero_ratio=1.0, padding=padding, gap=gap)
                 layout.set_widget(0, make_widget(0))
-            elif layout_class is not None and num_slots == 2:
-                # Split layouts
-                layout = layout_class(ratio=0.5, padding=padding, gap=gap)
+            elif layout_suffix == "1x2":
+                layout = SplitHorizontal(ratio=0.5, padding=padding, gap=gap)
+                for i in range(2):
+                    layout.set_widget(i, make_widget(i))
+            elif layout_suffix == "2x1":
+                layout = SplitVertical(ratio=0.5, padding=padding, gap=gap)
                 for i in range(2):
                     layout.set_widget(i, make_widget(i))
             else:
@@ -2044,63 +2056,34 @@ def generate_welcome_screen(renderer: Renderer, output_dir: Path) -> None:
     layout = HeroLayout(footer_slots=3, hero_ratio=0.65, padding=8, gap=8)
     img, draw = renderer.create_canvas()
 
-    # Hero: Clock widget showing current time
+    # Hero: Clock — no explicit color → theme.text_primary at render time.
     clock = ClockWidget(
         WidgetConfig(
             widget_type="clock",
             slot=0,
-            color=COLOR_WHITE,
             options={"show_date": True, "show_seconds": False},
         )
     )
     layout.set_widget(0, clock)
 
-    # Footer slot 1: HA version
-    ha_version = TextWidget(
-        WidgetConfig(
-            widget_type="text",
-            slot=1,
-            label="HA",
-            color=COLOR_CYAN,
-            options={
-                "text": "2024.12.1",
-                "size": "small",
-                "align": "center",
-            },
+    # Footer: HA version, entity count, setup hint — uniform text_primary
+    # values under text_secondary captions.
+    for slot, label, text in (
+        (1, "HA", "2024.12.1"),
+        (2, "Entities", "247"),
+        (3, "Setup", "Ready"),
+    ):
+        layout.set_widget(
+            slot,
+            TextWidget(
+                WidgetConfig(
+                    widget_type="text",
+                    slot=slot,
+                    label=label,
+                    options={"text": text, "size": "small", "align": "center"},
+                )
+            ),
         )
-    )
-    layout.set_widget(1, ha_version)
-
-    # Footer slot 2: Entity count
-    entity_count = TextWidget(
-        WidgetConfig(
-            widget_type="text",
-            slot=2,
-            label="Entities",
-            color=COLOR_LIME,
-            options={
-                "text": "247",
-                "size": "small",
-                "align": "center",
-            },
-        )
-    )
-    layout.set_widget(2, entity_count)
-
-    # Footer slot 3: Setup hint
-    setup_hint = TextWidget(
-        WidgetConfig(
-            widget_type="text",
-            slot=3,
-            color=COLOR_GRAY,
-            options={
-                "text": "Configure →",
-                "size": "small",
-                "align": "center",
-            },
-        )
-    )
-    layout.set_widget(3, setup_hint)
 
     layout.render(renderer, draw, build_widget_states(layout, hass))
     save_image(renderer, img, "00_welcome_screen", output_dir)
@@ -2328,7 +2311,7 @@ def generate_layout_samples(renderer: Renderer, output_dir: Path) -> None:
         },
     )
 
-    chart_temp_history = [20, 21, 22, 21, 23, 24, 23, 22, 21, 22, 23, 24]
+    chart_temp_history: list[float] = [20, 21, 22, 21, 23, 24, 23, 22, 21, 22, 23, 24]
 
     # Each recipe is a callable returning a widget for the given slot index,
     # paired with optional history data.
@@ -2498,19 +2481,51 @@ def generate_theme_samples(renderer: Renderer, output_dir: Path) -> None:
     layouts_dir.mkdir(exist_ok=True)
 
     hass = MockHass()
-    hass.states.set("sensor.cpu", "42", {"unit_of_measurement": "%", "friendly_name": "CPU"})
-    hass.states.set("sensor.memory", "68", {"unit_of_measurement": "%", "friendly_name": "Memory"})
-    hass.states.set("sensor.disk", "55", {"unit_of_measurement": "%", "friendly_name": "Disk"})
-    hass.states.set("sensor.network", "85", {"unit_of_measurement": "Mb/s", "friendly_name": "Net"})
-    hass.states.set("sensor.temp", "23", {"unit_of_measurement": "°C", "friendly_name": "Temp"})
     hass.states.set(
-        "sensor.humidity", "58", {"unit_of_measurement": "%", "friendly_name": "Humidity"}
+        "sensor.cpu",
+        "42",
+        {"unit_of_measurement": "%", "friendly_name": "CPU", "icon": "mdi:cpu-64-bit"},
     )
     hass.states.set(
-        "sensor.battery", "87", {"unit_of_measurement": "%", "friendly_name": "Battery"}
+        "sensor.memory",
+        "68",
+        {"unit_of_measurement": "%", "friendly_name": "Memory", "icon": "mdi:memory"},
     )
-    hass.states.set("sensor.power", "2.4", {"unit_of_measurement": "kW", "friendly_name": "Power"})
-    hass.states.set("sensor.solar", "3.2", {"unit_of_measurement": "kW", "friendly_name": "Solar"})
+    hass.states.set(
+        "sensor.disk",
+        "55",
+        {"unit_of_measurement": "%", "friendly_name": "Disk", "icon": "mdi:harddisk"},
+    )
+    hass.states.set(
+        "sensor.network",
+        "85",
+        {"unit_of_measurement": "Mb/s", "friendly_name": "Net", "icon": "mdi:lan"},
+    )
+    hass.states.set(
+        "sensor.temp",
+        "23",
+        {"unit_of_measurement": "°C", "friendly_name": "Temp", "device_class": "temperature"},
+    )
+    hass.states.set(
+        "sensor.humidity",
+        "58",
+        {"unit_of_measurement": "%", "friendly_name": "Humidity", "device_class": "humidity"},
+    )
+    hass.states.set(
+        "sensor.battery",
+        "87",
+        {"unit_of_measurement": "%", "friendly_name": "Battery", "device_class": "battery"},
+    )
+    hass.states.set(
+        "sensor.power",
+        "2.4",
+        {"unit_of_measurement": "kW", "friendly_name": "Power", "device_class": "power"},
+    )
+    hass.states.set(
+        "sensor.solar",
+        "3.2",
+        {"unit_of_measurement": "kW", "friendly_name": "Solar", "icon": "mdi:solar-power"},
+    )
     hass.states.set("device_tracker.phone", "home", {"friendly_name": "Phone"})
 
     # Define unique widget configurations for each theme

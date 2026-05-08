@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from PIL import Image
 
-from ..const import COLOR_CYAN
 from ..render_context import SizeCategory, get_size_category
 from .base import Widget, WidgetConfig
 from .components import (
+    THEME_PRIMARY,
     THEME_TEXT_PRIMARY,
     THEME_TEXT_SECONDARY,
     Bar,
@@ -109,10 +109,14 @@ class ImageFill(Component):
 
 @dataclass
 class DarkOverlay(Component):
-    """Dark overlay that sits at the bottom portion of its container."""
+    """Soft fade-to-black overlay at the bottom of the container.
 
-    height_ratio: float = 0.35  # Portion of height to cover
-    color: Color = (10, 10, 10)
+    Renders as a smooth gradient (transparent at the top of the overlay,
+    fully opaque at the bottom) so album art shows through gracefully.
+    """
+
+    height_ratio: float = 0.45
+    color: Color = (0, 0, 0)
 
     def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
         return (max_width, max_height)
@@ -120,7 +124,9 @@ class DarkOverlay(Component):
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
         overlay_height = int(height * self.height_ratio)
         overlay_y = y + height - overlay_height
-        ctx.draw_rect((x, overlay_y, x + width, y + height), fill=self.color)
+        ctx.draw_gradient_fade(
+            (x, overlay_y, x + width, y + height), color=self.color, direction="down"
+        )
 
 
 @dataclass
@@ -136,7 +142,7 @@ class AlbumArt(Component):
     artist: str = ""
     position: float = 0
     duration: float = 0
-    color: Color = COLOR_CYAN
+    color: Color = THEME_PRIMARY  # Theme-aware sentinel
     show_progress: bool = True
     show_overlay: bool = True
 
@@ -158,13 +164,14 @@ class AlbumArt(Component):
         show_artist = size in (SizeCategory.MEDIUM, SizeCategory.LARGE)
         show_time = size == SizeCategory.LARGE
 
-        # Overlay ratio varies by size - smaller for small cells
+        # Overlay ratio: gradient extends slightly higher to give the text
+        # room to breathe over the album art (watchOS now-playing pattern).
         if is_micro:
-            overlay_ratio = 0.28  # Minimal overlay for micro
+            overlay_ratio = 0.45
         elif is_compact:
-            overlay_ratio = 0.30
+            overlay_ratio = 0.50
         else:
-            overlay_ratio = 0.28
+            overlay_ratio = 0.55
 
         # Layer 2: Dark overlay at bottom
         DarkOverlay(height_ratio=overlay_ratio).render(ctx, x, y, width, height)
@@ -190,6 +197,13 @@ class AlbumArt(Component):
                 title_font = "small"
                 title_bold = True
 
+            # Album-art overlay text deliberately uses fixed near-white /
+            # near-grey colours, NOT theme.text_primary. These render on
+            # top of a black gradient over photographic content, so they
+            # need pure-white-ish contrast regardless of theme — even on
+            # the 'light' theme the gradient is dark, and theme text
+            # colours would be invisible. This is the documented exception
+            # to "use theme tokens for everything".
             text_children.append(
                 Text(
                     self.title,
@@ -201,7 +215,8 @@ class AlbumArt(Component):
                 )
             )
 
-        # Artist - show only when there's room (MEDIUM, LARGE)
+        # Artist - show only when there's room (MEDIUM, LARGE).
+        # Same album-art-overlay exception as the title.
         if self.artist and show_artist:
             text_children.append(
                 Text(
@@ -247,11 +262,10 @@ class AlbumArt(Component):
             bar_height = max(2, int(height * 0.015))
             bar_y = y + height - bar_height
 
-            # Use Bar component
+            # Tinted track via theme (Activity-bar style).
             Bar(
                 percent=progress,
                 color=self.color,
-                background=(40, 40, 40),
                 height=bar_height,
             ).render(ctx, x, bar_y, width, bar_height)
 
@@ -265,7 +279,7 @@ class NowPlaying(Component):
     album: str = ""
     position: float = 0
     duration: float = 0
-    color: Color = COLOR_CYAN
+    color: Color = THEME_PRIMARY  # Theme-aware sentinel
     show_artist: bool = True
     show_album: bool = False
     show_progress: bool = True
@@ -286,7 +300,7 @@ class NowPlaying(Component):
         album = self.album[: max_chars - 2] + ".." if len(self.album) > max_chars else self.album
 
         # Build component tree
-        children = [
+        children: list[Component] = [
             Text("NOW PLAYING", font="small", color=THEME_TEXT_SECONDARY),
             Spacer(min_size=int(height * 0.03)),
             Text(title, font="regular", color=THEME_TEXT_PRIMARY),

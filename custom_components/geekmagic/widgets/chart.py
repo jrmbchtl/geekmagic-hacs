@@ -6,10 +6,9 @@ import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..const import COLOR_CYAN  # Used as component dataclass default
-from ._header import header_height_for, header_mode, render_label_value_header
+from ._header import LabelValueHeader
 from .base import Widget, WidgetConfig
-from .components import THEME_TEXT_SECONDARY, Color, Component
+from .components import THEME_PRIMARY, THEME_TEXT_SECONDARY, Color, Component
 
 if TYPE_CHECKING:
     from ..render_context import RenderContext
@@ -24,7 +23,7 @@ class ChartDisplay(Component):
     label: str | None = None
     current_value: float | None = None
     unit: str = ""
-    color: Color = COLOR_CYAN
+    color: Color = THEME_PRIMARY  # Theme-aware sentinel — resolves at render time
     show_range: bool = True
     fill: bool = False
     gradient: bool = False
@@ -39,11 +38,10 @@ class ChartDisplay(Component):
         inner_w = width - padding * 2
 
         value_str = f"{self.current_value:.1f}{self.unit}" if self.current_value is not None else ""
-        mode = header_mode(ctx, label=self.label, value=value_str, inner_w=inner_w, height=height)
-        # Need text heights regardless of mode for header_height_for.
-        _, label_h = ctx.get_text_size("Hg", font_label) if self.label else (0, 0)
-        _, value_h = ctx.get_text_size("Hg", ctx.get_font("regular")) if value_str else (0, 0)
-        header_height = header_height_for(mode, label_h=label_h, value_h=value_h, height=height)
+        header = LabelValueHeader(
+            label=self.label, value=value_str, value_color=self.color, padding=padding
+        )
+        header_height = header.measure_height(ctx, inner_w, height)
 
         is_binary = self._is_binary_data()
         # Hide min/max range labels when the cell is too small to fit them
@@ -54,18 +52,7 @@ class ChartDisplay(Component):
         chart_bottom = y + height - footer_height
         chart_rect = (x + padding, chart_top, x + width - padding, chart_bottom)
 
-        render_label_value_header(
-            ctx,
-            x,
-            y,
-            width,
-            header_height,
-            mode=mode,
-            label=self.label,
-            value=value_str,
-            value_color=self.color,
-            padding=padding,
-        )
+        header.render(ctx, x, y, width, header_height)
 
         # Draw chart
         if len(self.data) >= 2:
@@ -79,21 +66,28 @@ class ChartDisplay(Component):
                 if show_range:
                     min_val = min(self.data)
                     max_val = max(self.data)
-                    range_y = chart_bottom + int(height * 0.08)
-                    ctx.draw_text(
-                        f"{min_val:.1f}",
-                        (x + padding, range_y),
-                        font=font_label,
-                        color=THEME_TEXT_SECONDARY,
-                        anchor="lm",
-                    )
-                    ctx.draw_text(
-                        f"{max_val:.1f}",
-                        (x + width - padding, range_y),
-                        font=font_label,
-                        color=THEME_TEXT_SECONDARY,
-                        anchor="rm",
-                    )
+                    min_text = f"{min_val:.1f}"
+                    max_text = f"{max_val:.1f}"
+                    # Skip range labels if they'd overlap (combined width >
+                    # available area minus a small gap).
+                    min_w, _ = ctx.get_text_size(min_text, font_label)
+                    max_w, _ = ctx.get_text_size(max_text, font_label)
+                    if min_w + max_w + 8 <= inner_w:
+                        range_y = chart_bottom + int(height * 0.08)
+                        ctx.draw_text(
+                            min_text,
+                            (x + padding, range_y),
+                            font=font_label,
+                            color=THEME_TEXT_SECONDARY,
+                            anchor="lm",
+                        )
+                        ctx.draw_text(
+                            max_text,
+                            (x + width - padding, range_y),
+                            font=font_label,
+                            color=THEME_TEXT_SECONDARY,
+                            anchor="rm",
+                        )
         else:
             center_x = x + width // 2
             center_y = (chart_top + chart_bottom) // 2
@@ -140,7 +134,7 @@ class ChartWidget(Widget):
                 "label": "Show Min/Max Range",
                 "default": True,
             },
-            {"key": "fill", "type": "boolean", "label": "Fill Area", "default": False},
+            {"key": "fill", "type": "boolean", "label": "Fill Area", "default": True},
             {
                 "key": "color_gradient",
                 "type": "boolean",

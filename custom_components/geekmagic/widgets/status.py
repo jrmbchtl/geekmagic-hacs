@@ -5,20 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..const import COLOR_LIME, COLOR_RED, PLACEHOLDER_NAME
-from ..render_context import SizeCategory, get_size_category
+from ..const import PLACEHOLDER_NAME
 from .base import Widget, WidgetConfig
 from .components import (
+    THEME_ERROR,
+    THEME_SUCCESS,
     THEME_TEXT_PRIMARY,
-    THEME_TEXT_SECONDARY,
     Color,
-    Column,
     Component,
     Icon,
     Row,
     Spacer,
     Text,
 )
+from .data_card import DataCard
 from .helpers import ON_STATES, estimate_max_chars, parse_color, truncate_text
 
 if TYPE_CHECKING:
@@ -35,12 +35,19 @@ def _is_entity_on(entity: EntityState | None) -> bool:
 
 @dataclass
 class StatusIndicator(Component):
-    """Status indicator with dot, label, and status text."""
+    """Status indicator: name caption, optional icon, ON/OFF hero state.
+
+    Per the watchOS contract, the icon's tint and the hero text colour
+    both carry the state: ``THEME_SUCCESS`` when the entity is on,
+    ``THEME_ERROR`` when off. ``DataCard`` picks the layout
+    automatically — stacked on roomy cells (icon + caption above the
+    big ON/OFF), compact on tight cells (icon | caption | ... | state).
+    """
 
     name: str
     is_on: bool = False
-    on_color: Color = COLOR_LIME
-    off_color: Color = COLOR_RED
+    on_color: Color = THEME_SUCCESS
+    off_color: Color = THEME_ERROR
     on_text: str = "ON"
     off_text: str = "OFF"
     icon: str | None = None
@@ -50,116 +57,15 @@ class StatusIndicator(Component):
         return (max_width, max_height)
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        """Render status indicator using component primitives."""
-        size = get_size_category(height)
         color = self.on_color if self.is_on else self.off_color
         status_text = self.on_text if self.is_on else self.off_text
-
-        # Vertical layout when there's enough vertical room — either because
-        # the cell is naturally tall (MEDIUM/LARGE) or because the cell is
-        # narrow-but-tall, where horizontal would crush icon + label + state.
-        prefer_vertical = size in (SizeCategory.MEDIUM, SizeCategory.LARGE) or (
-            width < 90 and height >= 80
-        )
-        if prefer_vertical and self.icon:
-            self._render_vertical(ctx, x, y, width, height, color, status_text)
-        else:
-            self._render_horizontal(ctx, x, y, width, height, color, status_text)
-
-    def _render_vertical(
-        self,
-        ctx: RenderContext,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
-        color: Color,
-        status_text: str,
-    ) -> None:
-        """Render vertical layout with prominent icon for larger cells."""
-        # Guard: this method requires an icon (caller checks, but type checker needs this)
-        if not self.icon:
-            return
-
-        padding = int(width * 0.08)
-        icon_size = max(32, min(64, int(height * 0.40)))
-
-        # Truncate name for display
-        max_name_len = estimate_max_chars(width, char_width=8, padding=padding * 2)
-        name = truncate_text(self.name, max_name_len, style="middle")
-
-        children: list[Component] = [
-            Icon(name=self.icon, size=icon_size, color=color),
-            Text(text=name, font="small", color=THEME_TEXT_PRIMARY),
-        ]
-
-        if self.show_status_text:
-            children.append(Text(text=status_text, font="medium", color=color, bold=True))
-
-        Column(
-            children=children,
-            gap=int(height * 0.05),
-            padding=padding,
-            align="center",
-            justify="center",
-        ).render(ctx, x, y, width, height)
-
-    def _render_horizontal(
-        self,
-        ctx: RenderContext,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
-        color: Color,
-        status_text: str,
-    ) -> None:
-        """Render horizontal layout for compact cells."""
-        padding = int(width * 0.06)
-        icon_size = max(12, min(24, int(height * 0.35)))
-
-        # Decide whether the on/off status text fits alongside name + icon.
-        # If the name + status couldn't fit even as truncated 3-char
-        # words, drop the status: the icon's color already conveys the
-        # state and a readable name is more useful than a truncated state.
-        font_bold = ctx.get_font("small", bold=True)
-        icon_w = (icon_size + 6) if self.icon else 0
-        inner_w = width - padding * 2 - icon_w
-        status_w, _ = ctx.get_text_size(status_text, font_bold)
-        # 24px ≈ "name…" minimum readable width for the name on the left.
-        show_status = self.show_status_text and status_w + 24 <= inner_w
-
-        children: list[Component] = []
-        if self.icon:
-            children.append(Icon(name=self.icon, size=icon_size, color=color))
-        children.append(
-            Text(
-                text=self.name,
-                font="small",
-                color=THEME_TEXT_PRIMARY,
-                align="start",
-                truncate=True,
-            )
-        )
-        if show_status:
-            children.append(Spacer())
-            children.append(
-                Text(
-                    text=status_text,
-                    font="small",
-                    color=color,
-                    align="end",
-                    bold=True,
-                )
-            )
-
-        # Render as a row
-        Row(
-            children=children,
-            gap=6,
-            padding=padding,
-            align="center",
-            justify="start",
+        DataCard(
+            caption=self.name,
+            icon=self.icon,
+            icon_color=color,
+            icon_role="feature",
+            hero=status_text if self.show_status_text else "",
+            hero_color=color,
         ).render(ctx, x, y, width, height)
 
 
@@ -199,8 +105,8 @@ class StatusWidget(Widget):
     def __init__(self, config: WidgetConfig) -> None:
         """Initialize the status widget."""
         super().__init__(config)
-        self.on_color = parse_color(config.options.get("on_color"), COLOR_LIME)
-        self.off_color = parse_color(config.options.get("off_color"), COLOR_RED)
+        self.on_color = parse_color(config.options.get("on_color"), THEME_SUCCESS)
+        self.off_color = parse_color(config.options.get("off_color"), THEME_ERROR)
         self.on_text = config.options.get("on_text", "ON")
         self.off_text = config.options.get("off_text", "OFF")
         self.icon = config.options.get("icon")
@@ -211,10 +117,7 @@ class StatusWidget(Widget):
         entity = state.entity
         is_on = _is_entity_on(entity)
 
-        name = self.config.label
-        if not name and entity:
-            name = entity.friendly_name
-        name = name or PLACEHOLDER_NAME
+        name = self.label_for(entity, fallback=PLACEHOLDER_NAME)
 
         return StatusIndicator(
             name=name,
@@ -243,77 +146,66 @@ class StatusListDisplay(Component):
         return (max_width, max_height)
 
     def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
-        """Render status list using component primitives."""
+        """Render status list (watchOS list pattern: caps-tracked title,
+        tinted dot per row, semibold name, status state as a tinted accent
+        on the right; thin separator lines between rows).
+        """
         padding = int(width * 0.05)
-
-        # Build list of rows
-        rows: list[Component] = []
-
-        # Add title if provided
-        if self.title:
-            rows.append(
-                Text(
-                    text=self.title.upper(),
-                    font="small",
-                    color=THEME_TEXT_SECONDARY,
-                    align="start",
-                )
-            )
-
-        # Calculate dimensions for items
-        available_height = height - padding * 2
-        if self.title:
-            available_height -= int(height * 0.15)
-
         row_count = len(self.items) or 1
-        row_height = min(int(height * 0.17), available_height // row_count)
-        icon_size = max(10, min(16, int(row_height * 0.7)))
+        title_h = int(height * 0.15) if self.title else 0
+        available_height = height - padding * 2 - title_h
+        row_height = max(14, available_height // row_count)
+        icon_size = max(10, min(18, int(row_height * 0.68)))
         max_len = estimate_max_chars(width, char_width=7, padding=30)
 
-        # Build each item row
-        for label, is_on, on_color, off_color, icon in self.items:
-            color = on_color if is_on else off_color
-            display_label = truncate_text(label, max_len, style="middle")
-
-            # Build row children
-            row_children = []
-
-            # Add icon if provided
-            if icon:
-                row_children.append(Icon(name=icon, size=icon_size, color=color))
-
-            # Add label
-            row_children.append(
-                Text(text=display_label, font="tiny", color=THEME_TEXT_PRIMARY, align="start")
+        # Caps-tracked title at the top
+        if self.title:
+            ctx.draw_label(
+                self.title,
+                (x + padding, y + padding),
+                color=ctx.theme.text_secondary,
+                anchor="lt",
+                size="tertiary",
             )
 
-            # Add status text if configured
+        # Render items, drawing a 1px separator line above each (except first).
+        sep_color = ctx.theme.border
+        list_top = y + padding + title_h
+        for i, (label, is_on, on_color, off_color, icon) in enumerate(self.items):
+            color = on_color if is_on else off_color
+            display_label = truncate_text(label, max_len, style="middle")
+            row_y = list_top + i * row_height
+
+            # Separator before all rows except the first
+            if i > 0:
+                ctx.draw_line(
+                    [(x + padding, row_y), (x + width - padding, row_y)],
+                    fill=sep_color,
+                    width=1,
+                )
+
+            row_children: list[Component] = []
+            if icon:
+                row_children.append(Icon(name=icon, size=icon_size, color=color))
+            row_children.append(
+                Text(text=display_label, font="small", color=THEME_TEXT_PRIMARY, align="start")
+            )
+
             if self.on_text or self.off_text:
                 status_text = self.on_text if is_on else self.off_text
                 if status_text:
                     row_children.append(Spacer())
                     row_children.append(
-                        Text(text=status_text, font="tiny", color=color, align="end")
+                        Text(text=status_text, font="small", bold=True, color=color, align="end")
                     )
 
-            # Create row component
-            rows.append(
-                Row(
-                    children=row_children,
-                    gap=6,
-                    align="center",
-                    justify="start",
-                )
-            )
-
-        # Render all rows in a column
-        Column(
-            children=rows,
-            gap=4 if self.title else 2,
-            padding=padding,
-            align="stretch",
-            justify="start",
-        ).render(ctx, x, y, width, height)
+            Row(
+                children=row_children,
+                gap=6,
+                align="center",
+                justify="start",
+                padding=2,
+            ).render(ctx, x + padding, row_y, width - padding * 2, row_height)
 
 
 class StatusListWidget(Widget):
@@ -345,8 +237,8 @@ class StatusListWidget(Widget):
         """Initialize the status list widget."""
         super().__init__(config)
         self.entities = config.options.get("entities", [])
-        self.on_color = parse_color(config.options.get("on_color"), COLOR_LIME)
-        self.off_color = parse_color(config.options.get("off_color"), COLOR_RED)
+        self.on_color = parse_color(config.options.get("on_color"), THEME_SUCCESS)
+        self.off_color = parse_color(config.options.get("off_color"), THEME_ERROR)
         self.on_text = config.options.get("on_text")
         self.off_text = config.options.get("off_text")
         self.title = config.options.get("title")

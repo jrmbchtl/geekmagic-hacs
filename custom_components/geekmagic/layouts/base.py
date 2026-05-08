@@ -34,20 +34,56 @@ class Slot:
 class Layout(ABC):
     """Base class for display layouts."""
 
-    def __init__(self, padding: int = 8, gap: int = 8) -> None:
+    def __init__(self, padding: int | None = None, gap: int | None = None) -> None:
         """Initialize the layout.
 
         Args:
-            padding: Padding around the edges
-            gap: Gap between widgets
+            padding: Padding around the edges. When ``None`` (default),
+                ``self.padding`` resolves to the active theme's
+                ``layout_padding`` at access time, so changing the theme
+                via ``layout.theme = ...`` automatically updates spacing.
+                Passing an explicit value pins it and ignores the theme.
+            gap: Gap between widgets. Same semantics as ``padding``.
         """
-        self.padding = padding
-        self.gap = gap
+        self._padding_override = padding
+        self._gap_override = gap
+        self._theme: Theme = DEFAULT_THEME
         self.width = DISPLAY_WIDTH
         self.height = DISPLAY_HEIGHT
         self.slots: list[Slot] = []
-        self.theme: Theme = DEFAULT_THEME  # Default theme, can be overridden
         self._calculate_slots()
+
+    @property
+    def padding(self) -> int:
+        """Outer padding — explicit override or theme default."""
+        return (
+            self._padding_override
+            if self._padding_override is not None
+            else self._theme.layout_padding
+        )
+
+    @property
+    def gap(self) -> int:
+        """Inter-widget gap — explicit override or theme default."""
+        return self._gap_override if self._gap_override is not None else self._theme.gap
+
+    @property
+    def theme(self) -> Theme:
+        """Active theme."""
+        return self._theme
+
+    @theme.setter
+    def theme(self, value: Theme) -> None:
+        """Set the active theme and rebuild slots so theme-driven padding/gap
+        actually take effect (e.g. retro/soft/candy ship larger padding=8)."""
+        self._theme = value
+        # Recompute slot rectangles with the new theme's padding/gap, but
+        # preserve any widgets already placed in those slots.
+        existing_widgets = [slot.widget for slot in self.slots]
+        self._calculate_slots()
+        for i, widget in enumerate(existing_widgets):
+            if widget is not None and i < len(self.slots):
+                self.slots[i].widget = widget
 
     @abstractmethod
     def _calculate_slots(self) -> None:
@@ -136,6 +172,10 @@ class Layout(ABC):
         canvas = draw._image  # noqa: SLF001
         scale = renderer.scale
 
+        # Paint the canvas with the theme background so widgets gaps and
+        # uncovered areas use the correct color (not black-by-default).
+        draw.rectangle((0, 0, canvas.width, canvas.height), fill=self.theme.background)
+
         # Default empty states dict
         if widget_states is None:
             widget_states = {}
@@ -150,9 +190,23 @@ class Layout(ABC):
             slot_width = (x2 - x1) * scale
             slot_height = (y2 - y1) * scale
 
-            # Create temporary image for this widget using theme's surface color
-            temp_img = Image.new("RGB", (slot_width, slot_height), self.theme.surface)
+            # When the theme uses surface chrome, paint the slot with a
+            # rounded card on top of the canvas background. Otherwise the
+            # slot background matches the canvas — widgets float on the
+            # background (watchOS deference principle).
+            temp_img = Image.new("RGB", (slot_width, slot_height), self.theme.background)
             temp_draw = PILImageDraw.Draw(temp_img)
+            if self.theme.surface_chrome:
+                # Draw the rounded card chrome first; widgets render on top.
+                radius = max(0, self.theme.corner_radius * scale)
+                outline = self.theme.border if self.theme.border_width > 0 else None
+                temp_draw.rounded_rectangle(
+                    (0, 0, slot_width - 1, slot_height - 1),
+                    radius=radius,
+                    fill=self.theme.surface,
+                    outline=outline,
+                    width=max(1, self.theme.border_width * scale) if outline else 1,
+                )
 
             # Create render context with local coordinates (0, 0 to width, height)
             # The rect is relative to the temp image, not the main canvas

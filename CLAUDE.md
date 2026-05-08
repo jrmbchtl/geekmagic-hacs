@@ -166,6 +166,106 @@ GET  /app.json               # Get device state
 - Use high contrast colors (light on dark)
 - JPEG upload is faster than PNG (~2.5s vs ~5.8s)
 
+## Design System (watchOS-inspired) — rules for widget authors
+
+The default theme (`watchos`) is modelled on Apple's watchOS HIG: true-black
+background, system colours, opacity-based text hierarchy, tinted Activity-ring
+gauges, no card chrome. **Every widget should follow these rules so themes
+stay consistent.** When in doubt, look at how Entity / Clock / BarGauge
+handle the same thing — they're the canonical references.
+
+### Goals
+
+1. **Information density first.** A 240×240 cell is tiny. Use every pixel —
+   `justify="space-evenly"` to spread content top-to-bottom (equal gaps
+   before/between/after each band reads more balanced than pinning the
+   first/last items flush to the cell edges). Never leave the bottom half
+   of a cell empty if there's data to show. Three-band layout (caption /
+   hero / supporting strip) is the default for cells ≥100×100.
+2. **Hierarchy via size + weight + colour.** A glance must surface the
+   primary metric instantly: bold + large for the hero, secondary for
+   supporting data, tertiary for captions. Don't make everything the same
+   size.
+3. **Theme consistency.** A user moving between widgets in the same theme
+   should never see an unexplained colour shift. Colour comes from the
+   theme, not from the widget.
+4. **Adapt to cell shape.** Pick layout from `(width, height)` at render
+   time — a hero ring should spread across a fullscreen cell but stay tight
+   in a 3×3 grid; a vertical bar should stack everything when the cell is
+   very narrow.
+
+### Colour rules — pick by intent, not by RGB
+
+Widgets MUST use **theme role sentinels** from `widgets/components.py`,
+never hardcoded `SYSTEM_BLUE`/`SYSTEM_ORANGE`/etc. The sentinels resolve
+to the active theme's palette at render time.
+
+Available sentinels (resolve to `theme.<role>`):
+
+| Sentinel              | Use for                                              |
+|-----------------------|------------------------------------------------------|
+| `THEME_TEXT_PRIMARY`  | Default for hero values (white-ish on dark themes)   |
+| `THEME_TEXT_SECONDARY`| Supporting info (dates, units, "Sunny" condition)    |
+| `THEME_TEXT_TERTIARY` | Caps captions, very-low-priority text                |
+| `THEME_PRIMARY`       | Brand accent — fallback for chart / progress         |
+| `THEME_SECONDARY`     | Night, lightning, less-prominent accents             |
+| `THEME_SUCCESS`       | ON / connected / wind                                |
+| `THEME_WARNING`       | Sunny / hot temp / heating / caution                 |
+| `THEME_ERROR`         | Off / disconnected / extreme / preheating            |
+| `THEME_INFO`          | Cool / cold / water / rain / cooling / humidity      |
+| `THEME_MUTED`         | Idle / off / fog / disabled                          |
+
+**Rule of thumb for hero value colour:**
+
+- Default: `THEME_TEXT_PRIMARY` (white). Use this for entity value, clock
+  time, weather temp, climate temp, multi-progress hero, bar-gauge compact
+  value.
+- Use a role tint **only** when one of these narrow exceptions applies:
+  1. **Gauge family** (Bar/Ring/Arc) where the value matches the gauge's
+     own accent — value + fill read as one visual unit (Apple Activity-ring
+     style). E.g. ring `73%` in the ring's tint.
+  2. **Status state** where the colour IS the meaning — `ON` in success
+     green, `OFF` in error red.
+  3. **Mode chip** where the tint reinforces an explicit mode label
+     (climate `HEATING` chip in warning).
+
+**The icon, ring fill, bar fill, and dot indicators carry the semantic
+tint.** That's where the colour lives.
+
+### Don't
+
+- Don't hardcode `SYSTEM_*` in widget code — the regression test
+  `tests/test_watchos_design_system.py::TestNoHardcodedSystemColors` guards
+  this.
+- Don't `import` directly from `widgets/theme.py` for colour values.
+- Don't tint a hero value just because it "looks nice" — follow the rule
+  above. If you're tempted, the icon should probably be tinted instead.
+- Don't use `Column(justify="center")` if the cell is taller than the
+  natural content height — content will cluster centred and waste space.
+  Default to `justify="space-evenly"` for top-to-bottom content
+  distribution: it puts equal spacing before, between, and after the
+  children, which reads better in most cells than `space-between`
+  (which pins the first/last children flush to the edges and can leave
+  them feeling crowded). Only fall back to `space-between` when the
+  cell is so short that any breathing room would push content off
+  screen, or when you specifically want the first/last items hard
+  against the cell edge. For Rows (horizontal), `space-between` is
+  still the right call (label left / value right pattern).
+- Don't use absolute `Padding(top=..., bottom=...)` for layout when child
+  heights vary with cell size — they only work at the exact tuning point.
+  Prefer flex-style Column/Row with `Spacer`.
+
+### Do
+
+- Read `tests/test_watchos_design_system.py` before adding a widget — it
+  documents the contract.
+- Use `ctx.track_color(tint)` for any bar/ring/arc track — picks up the
+  theme's `tint_track` setting automatically.
+- Use `ctx.fit_text()` for hero values that should auto-scale to fill
+  their box — guarantees the value stays inside its budget.
+- Use the `BarGauge` factory's `mode="auto"` (default) — it picks
+  compact/stacked/vertical for you.
+
 ## Font Sizing System
 
 Fonts are automatically scaled based on container height. Two naming systems are supported:
@@ -267,28 +367,25 @@ Use helper functions from `widgets/helpers.py` for common operations:
 
 ```python
 from ..widgets.helpers import (
-    truncate_text,       # Truncate long text with ellipsis
-    extract_numeric,     # Get float from entity state
-    resolve_label,       # Get label from config or friendly_name
-    calculate_percent,   # Calculate percentage in range
-    is_entity_on,        # Check binary state
-    get_unit,            # Get unit of measurement
+    truncate_text,           # Truncate long text with ellipsis
+    estimate_max_chars,      # Estimate max chars that fit in pixel width
+    format_number,           # Format with optional 1k/1M abbreviation
+    format_value_with_unit,  # Format "23°C" / "1.5k views"
+    calculate_percent,       # Clamp value to 0..100 over a min/max range
+    parse_color,             # Coerce JSON list/tuple to RGB
+    get_binary_sensor_icon,  # MDI icon by binary_sensor device_class
+    get_domain_state_icon,   # MDI icon by domain + state
+    translate_binary_state,  # Localized "Open"/"Closed" etc.
 )
 ```
 
-### Layout Helper Functions
+### Component Helpers
 
-Use `widgets/layout_helpers.py` for common rendering patterns:
-
-```python
-from ..widgets.layout_helpers import (
-    layout_icon_label_value,   # [Icon] [Label] ... [Value]
-    layout_centered_value,     # Centered value with label below
-    layout_bar_with_label,     # Progress bar with label/value above
-    layout_list_rows,          # Calculate row positions for lists
-    draw_title,                # Draw title at top
-)
-```
+Build widget render trees with the declarative components in
+`widgets/components.py` and the higher-level factories in
+`widgets/component_helpers.py` (`BarGauge`, `RingGauge`, `ArcGauge`,
+`IconValue`, `CenteredValue`). They auto-pick layout for the cell shape
+and pick up theme colours through the role sentinels.
 
 ## Adding New Layouts
 

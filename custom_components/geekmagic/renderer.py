@@ -5,7 +5,6 @@ Uses 2x supersampling for anti-aliased output.
 
 from __future__ import annotations
 
-import math
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +25,8 @@ from .const import (
 from .icons import get_mdi_char
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from PIL.ImageFont import FreeTypeFont
 
 
@@ -35,48 +36,71 @@ SUPERSAMPLE_SCALE = 2
 # Bundled font directory (relative to this file)
 _FONTS_DIR = Path(__file__).parent / "fonts"
 
+# Font weight roles map to specific files. Nunito is the watchOS-style
+# rounded font; DejaVu is kept as fallback when rounded=False.
+_NUNITO_REGULAR = _FONTS_DIR / "Nunito-Regular.ttf"
+_NUNITO_SEMIBOLD = _FONTS_DIR / "Nunito-SemiBold.ttf"
+_NUNITO_BOLD = _FONTS_DIR / "Nunito-Bold.ttf"
+_NUNITO_EXTRABOLD = _FONTS_DIR / "Nunito-ExtraBold.ttf"
+_DEJAVU_REGULAR = _FONTS_DIR / "DejaVuSans.ttf"
+_DEJAVU_BOLD = _FONTS_DIR / "DejaVuSans-Bold.ttf"
 
-def _load_font(size: int, bold: bool = False) -> FreeTypeFont | ImageFont.ImageFont:
+# System fallback paths (Linux / macOS / Windows). The macOS entries are
+# (path, ttc-index) tuples.
+_SYS_BOLD: list[Path | str | tuple[str, int]] = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ("/System/Library/Fonts/Helvetica.ttc", 1),
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+_SYS_REGULAR: list[Path | str | tuple[str, int]] = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ("/System/Library/Fonts/Helvetica.ttc", 0),
+    "C:/Windows/Fonts/arial.ttf",
+]
+
+
+def _try_truetype(
+    paths: list[Path | str | tuple[str, int]], size: int
+) -> FreeTypeFont | ImageFont.ImageFont:
+    """Return the first TrueType font that loads from `paths`, else default."""
+    for entry in paths:
+        try:
+            if isinstance(entry, tuple):
+                path, index = entry
+                return ImageFont.truetype(path, size, index=index)
+            return ImageFont.truetype(str(entry), size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _load_font(
+    size: int, bold: bool = False, rounded: bool = True
+) -> FreeTypeFont | ImageFont.ImageFont:
     """Load a TrueType font or fall back to default.
-
-    Prefers bundled DejaVu Sans for consistent Unicode support across platforms.
 
     Args:
         size: Font size in pixels
         bold: Whether to load bold variant
+        rounded: Prefer the rounded family (Nunito). Falls back to DejaVu.
 
     Returns:
         Loaded font or default font
     """
-    if bold:
-        font_paths = [
-            # Bundled font (best Unicode support, works in HA Docker)
-            _FONTS_DIR / "DejaVuSans-Bold.ttf",
-            # System fonts as fallback
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
-            ("/System/Library/Fonts/Helvetica.ttc", 1),  # macOS (index 1 = bold)
-            "C:/Windows/Fonts/arialbd.ttf",  # Windows
-        ]
-    else:
-        font_paths = [
-            # Bundled font (best Unicode support, works in HA Docker)
-            _FONTS_DIR / "DejaVuSans.ttf",
-            # System fonts as fallback
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-            ("/System/Library/Fonts/Helvetica.ttc", 0),  # macOS (index 0 = regular)
-            "C:/Windows/Fonts/arial.ttf",  # Windows
-        ]
+    paths: list[Path | str | tuple[str, int]] = []
+    if rounded:
+        paths.extend([_NUNITO_BOLD, _NUNITO_EXTRABOLD] if bold else [_NUNITO_REGULAR])
+    paths.append(_DEJAVU_BOLD if bold else _DEJAVU_REGULAR)
+    paths.extend(_SYS_BOLD if bold else _SYS_REGULAR)
+    return _try_truetype(paths, size)
 
-    for path_entry in font_paths:
-        try:
-            if isinstance(path_entry, tuple):
-                path, index = path_entry
-                return ImageFont.truetype(path, size, index=index)
-            return ImageFont.truetype(str(path_entry), size)
-        except OSError:
-            continue
 
-    return ImageFont.load_default()
+def _load_semibold_font(size: int, rounded: bool = True) -> FreeTypeFont | ImageFont.ImageFont:
+    """Load Nunito SemiBold (600 weight). Falls back to DejaVu Bold."""
+    paths: list[Path | str | tuple[str, int]] = (
+        [_NUNITO_SEMIBOLD, _DEJAVU_BOLD] if rounded else [_DEJAVU_BOLD]
+    )
+    return _try_truetype(paths, size)
 
 
 # MDI icon font path
@@ -110,7 +134,6 @@ class Renderer:
         self._scaled_height = self.height * self._scale
 
         # Load fonts at scaled sizes (min 13px for readability on 240x240 display)
-        # Tiny font increased from 11px to 13px for better readability
         self.font_tiny = _load_font(13 * self._scale)
         self.font_small = _load_font(14 * self._scale)
         self.font_regular = _load_font(15 * self._scale)
@@ -124,8 +147,11 @@ class Renderer:
         self.font_regular_bold = _load_font(15 * self._scale, bold=True)
         self.font_medium_bold = _load_font(18 * self._scale, bold=True)
 
-        # Font cache for dynamically sized fonts (avoid repeated disk I/O)
-        self._font_cache: dict[tuple[int, bool], FreeTypeFont | ImageFont.ImageFont] = {}
+        # Font cache for dynamically sized fonts (avoid repeated disk I/O).
+        # Key: (scaled_size, bold, rounded)
+        self._font_cache: dict[tuple[int, bool, bool], FreeTypeFont | ImageFont.ImageFont] = {}
+        # SemiBold cache (separate weight, rounded variant only)
+        self._semibold_cache: dict[tuple[int, bool], FreeTypeFont | ImageFont.ImageFont] = {}
 
         # MDI icon font cache (keyed by scaled size)
         self._mdi_font_cache: dict[int, FreeTypeFont | ImageFont.ImageFont] = {}
@@ -145,11 +171,10 @@ class Renderer:
         rect_height: int,
         bold: bool = False,
         adjust: int = 0,
+        rounded: bool = True,
+        semibold: bool = False,
     ) -> FreeTypeFont | ImageFont.ImageFont:
         """Get a font scaled relative to container height.
-
-        This enables widgets to render correctly at any size by scaling
-        fonts proportionally to their container.
 
         Args:
             size_name: Font size category. Supports two naming systems:
@@ -158,21 +183,23 @@ class Renderer:
             rect_height: Height of the container rect (already scaled for supersample)
             bold: Whether to use bold variant
             adjust: Relative size adjustment (-2 to +2). Each step is ~15% size change.
+            rounded: Prefer the rounded font family (Nunito). Defaults to True.
+            semibold: Use the SemiBold weight (between regular and bold).
+                Implies rounded=True. Takes precedence over `bold`.
 
         Returns:
             Font scaled appropriately for the container size
         """
-        # Semantic sizes as ratios of container height
-        # These map to approximate proportions for readable text
+        # watchOS-tuned semantic ratios.
+        # primary: hero values (large, dominant)
+        # secondary: sub-values, list rows
+        # tertiary: caps-tracked labels, captions
         semantic_ratios = {
-            "primary": 0.35,  # Main value - 35% of container height
-            "secondary": 0.20,  # Supporting info - 20%
-            "tertiary": 0.12,  # Labels, captions - 12%
+            "primary": 0.36,
+            "secondary": 0.18,
+            "tertiary": 0.11,
         }
 
-        # Legacy font config: (base_size, min_size) per category
-        # Base sizes are for full 240px height at 2x scale = 480px
-        # Min sizes ensure readability even in small containers
         legacy_config = {
             "tiny": (13, 22),
             "small": (14, 24),
@@ -183,27 +210,26 @@ class Renderer:
             "huge": (52, 52),
         }
 
-        # Calculate scale factor based on container height vs reference
         reference_height = self._scaled_height
         scale_factor = rect_height / reference_height
-
-        # Adjustment factor: each step is ~15% change
         adjust_factor = 1.15**adjust
 
         if size_name in semantic_ratios:
-            # Semantic sizing: ratio-based
             ratio = semantic_ratios[size_name] * adjust_factor
-            # Calculate pixel size from ratio and container height
             scaled_size = max(22, int(rect_height * ratio))
         else:
-            # Legacy sizing: base size with scale factor
             base_size, min_size = legacy_config.get(size_name, (15, 24))
             scaled_size = max(min_size, int(base_size * self._scale * scale_factor * adjust_factor))
 
-        # Check cache first to avoid repeated disk I/O
-        cache_key = (scaled_size, bold)
+        if semibold:
+            sb_key = (scaled_size, rounded)
+            if sb_key not in self._semibold_cache:
+                self._semibold_cache[sb_key] = _load_semibold_font(scaled_size, rounded=rounded)
+            return self._semibold_cache[sb_key]
+
+        cache_key = (scaled_size, bold, rounded)
         if cache_key not in self._font_cache:
-            self._font_cache[cache_key] = _load_font(scaled_size, bold=bold)
+            self._font_cache[cache_key] = _load_font(scaled_size, bold=bold, rounded=rounded)
         return self._font_cache[cache_key]
 
     def fit_text_font(
@@ -214,30 +240,19 @@ class Renderer:
         bold: bool = False,
         min_size: int = 20,
         max_size: int = 200,
+        rounded: bool = True,
     ) -> FreeTypeFont | ImageFont.ImageFont:
         """Find the largest font size that fits text within bounds.
 
         Uses binary search to efficiently find the optimal size.
         All dimensions should be in scaled coordinates.
-
-        Args:
-            text: Text to fit
-            max_width: Maximum width in scaled pixels
-            max_height: Maximum height in scaled pixels
-            bold: Whether to use bold variant
-            min_size: Minimum font size to consider
-            max_size: Maximum font size to consider
-
-        Returns:
-            Font at the largest size that fits within bounds
         """
-        # Binary search for optimal font size
         low, high = min_size, max_size
-        best_font = _load_font(min_size, bold=bold)
+        best_font = _load_font(min_size, bold=bold, rounded=rounded)
 
         while low <= high:
             mid = (low + high) // 2
-            font = _load_font(mid, bold=bold)
+            font = _load_font(mid, bold=bold, rounded=rounded)
             bbox = font.getbbox(text)
 
             if bbox:
@@ -246,17 +261,16 @@ class Renderer:
 
                 if text_width <= max_width and text_height <= max_height:
                     best_font = font
-                    low = mid + 1  # Try larger
+                    low = mid + 1
                 else:
-                    high = mid - 1  # Try smaller
+                    high = mid - 1
             else:
                 high = mid - 1
 
-        # Cache the result
         bbox = best_font.getbbox(text)
         if bbox:
-            size = int(bbox[3] - bbox[1])  # Approximate from height
-            cache_key = (size, bold)
+            size = int(bbox[3] - bbox[1])
+            cache_key = (size, bold, rounded)
             if cache_key not in self._font_cache:
                 self._font_cache[cache_key] = best_font
 
@@ -540,11 +554,13 @@ class Renderer:
         self,
         draw: ImageDraw.ImageDraw,
         rect: tuple[int, int, int, int],
-        data: list[float],
+        data: Sequence[float],
         color: tuple[int, int, int] = COLOR_CYAN,
         fill: bool = True,
         smooth: bool = True,
         gradient: bool = False,
+        gradient_cool: tuple[int, int, int] | None = None,
+        gradient_warm: tuple[int, int, int] | None = None,
     ) -> None:
         """Draw a sparkline chart with optional smoothing.
 
@@ -556,6 +572,10 @@ class Renderer:
             fill: Whether to fill area under the line
             smooth: Whether to use spline interpolation for smooth curves
             gradient: Whether to use gradient coloring (cool to warm based on value)
+            gradient_cool: Low-value gradient endpoint. Defaults to a steel
+                blue. Pass theme.info to make the gradient theme-aware.
+            gradient_warm: High-value gradient endpoint. Defaults to dark
+                orange. Pass theme.warning for theme-aware.
         """
         if not data or len(data) < 2:
             return
@@ -588,28 +608,45 @@ class Renderer:
         # Convert to integer tuples
         int_points = [(int(p[0]), int(p[1])) for p in points]
 
-        # Draw filled area
+        # Draw filled area — soft tint of the line color (watchOS-style).
         if fill:
             fill_points = [(x1, y2), *int_points, (x2, y2)]
             if gradient:
-                # Gradient: blend between cool (blue) for low values and warm (orange) for high
-                # Use the average normalized value to pick a blend
+                # Gradient: blend between a cool low-value colour and a warm
+                # high-value colour. Caller supplies the endpoints so they
+                # match the active theme; falls back to steel-blue → dark
+                # orange to preserve previous behaviour for callers that
+                # don't pass them.
+                cool = gradient_cool if gradient_cool is not None else (70, 130, 180)
+                warm = gradient_warm if gradient_warm is not None else (255, 140, 0)
                 avg_normalized = sum((v - min_val) / range_val for v in data) / len(data)
-                # Cool: (70, 130, 180) - Steel blue
-                # Warm: (255, 140, 0) - Dark orange
-                fill_color = (
-                    int(70 + (255 - 70) * avg_normalized) // 3,
-                    int(130 + (140 - 130) * avg_normalized) // 3,
-                    int(180 + (0 - 180) * avg_normalized) // 3,
+                blended = (
+                    int(cool[0] + (warm[0] - cool[0]) * avg_normalized),
+                    int(cool[1] + (warm[1] - cool[1]) * avg_normalized),
+                    int(cool[2] + (warm[2] - cool[2]) * avg_normalized),
                 )
+                fill_color = self.tint_at(blended, 0.32)
             else:
-                # Fill with ~35% opacity of line color for visible but subtle effect
-                fill_color = (color[0] // 3, color[1] // 3, color[2] // 3)
+                # ~28% tint over black (compatible with the theme's
+                # tinted-track aesthetic)
+                fill_color = self.tint_at(color, 0.28)
             draw.polygon(fill_points, fill=fill_color)
 
         # Draw line
         if len(int_points) >= 2:
             draw.line(int_points, fill=color, width=self._s(2))
+
+    def dim_color(
+        self,
+        color: tuple[int, int, int],
+        factor: float = 0.25,
+    ) -> tuple[int, int, int]:
+        """Return a dimmed version of a color for legacy debug render scripts."""
+        return (
+            max(0, min(255, int(color[0] * factor))),
+            max(0, min(255, int(color[1] * factor))),
+            max(0, min(255, int(color[2] * factor))),
+        )
 
     def draw_timeline_bar(
         self,
@@ -724,92 +761,6 @@ class Renderer:
             end = start + (percent / 100) * 360
             draw.arc(bbox, start=start, end=end, fill=color, width=w)
 
-    def draw_segmented_bar(
-        self,
-        draw: ImageDraw.ImageDraw,
-        rect: tuple[int, int, int, int],
-        segments: list[tuple[float, tuple[int, int, int]]],
-        background: tuple[int, int, int] = COLOR_DARK_GRAY,
-        radius: int = 2,
-    ) -> None:
-        """Draw a segmented horizontal bar with multiple colored sections.
-
-        Args:
-            draw: ImageDraw instance
-            rect: (x1, y1, x2, y2) bounding box
-            segments: List of (percentage, color) tuples, should sum to <= 100
-            background: Background color
-            radius: Corner radius
-        """
-        x1, y1, x2, y2 = rect
-        total_width = x2 - x1
-
-        # Draw background
-        self.draw_rounded_rect(draw, rect, radius=radius, fill=background)
-
-        # Draw segments
-        current_x = x1
-        for seg_percent, seg_color in segments:
-            seg_width = int(total_width * (seg_percent / 100))
-            if seg_width > 0 and current_x < x2:
-                seg_rect = (current_x, y1, min(current_x + seg_width, x2), y2)
-                self.draw_rect(draw, seg_rect, fill=seg_color)
-                current_x += seg_width
-
-    def draw_mini_bars(
-        self,
-        draw: ImageDraw.ImageDraw,
-        rect: tuple[int, int, int, int],
-        data: list[float],
-        color: tuple[int, int, int] = COLOR_CYAN,
-        background: tuple[int, int, int] | None = None,
-        bar_width: int = 3,
-        gap: int = 1,
-    ) -> None:
-        """Draw a mini bar chart (vertical bars).
-
-        Args:
-            draw: ImageDraw instance
-            rect: (x1, y1, x2, y2) bounding box
-            data: List of values
-            color: Bar color
-            background: Optional background color for empty space
-            bar_width: Width of each bar
-            gap: Gap between bars
-        """
-        if not data:
-            return
-
-        x1, y1, x2, y2 = self._scale_rect(rect)
-        height = y2 - y1
-        bw = self._s(bar_width)
-        g = self._s(gap)
-
-        # Normalize data
-        max_val = max(data) if max(data) > 0 else 1
-        min_val = min(data)
-        range_val = max_val - min_val if max_val != min_val else 1
-
-        # Calculate how many bars fit
-        available_width = x2 - x1
-        num_bars = min(len(data), available_width // (bw + g))
-
-        # Use last N data points if we have more data than space
-        if len(data) > num_bars:
-            data = data[-num_bars:]
-
-        # Draw bars from right to left (most recent on right)
-        for i, value in enumerate(reversed(data)):
-            bar_x = x2 - (i + 1) * (bw + g)
-            if bar_x < x1:
-                break
-
-            bar_height = int(((value - min_val) / range_val) * height * 0.9)
-            bar_height = max(bar_height, self._s(2))
-
-            bar_y = y2 - bar_height
-            draw.rectangle((bar_x, bar_y, bar_x + bw, y2), fill=color)
-
     def draw_panel(
         self,
         draw: ImageDraw.ImageDraw,
@@ -916,42 +867,81 @@ class Renderer:
         # Draw the icon character
         draw.text((x, y), mdi_char, font=font, fill=color)
 
-    def dim_color(self, color: tuple[int, int, int], factor: float = 0.3) -> tuple[int, int, int]:
-        """Dim a color by a factor.
-
-        Args:
-            color: RGB color tuple
-            factor: Dimming factor (0-1, lower = dimmer)
-
-        Returns:
-            Dimmed RGB color
-        """
-        return (
-            int(color[0] * factor),
-            int(color[1] * factor),
-            int(color[2] * factor),
-        )
-
-    def blend_color(
+    def draw_gradient_fade(
         self,
-        color1: tuple[int, int, int],
-        color2: tuple[int, int, int],
-        factor: float = 0.5,
-    ) -> tuple[int, int, int]:
-        """Blend two colors.
+        draw: ImageDraw.ImageDraw,
+        rect: tuple[int, int, int, int],
+        color: tuple[int, int, int] = COLOR_BLACK,
+        direction: str = "down",
+        steps: int | None = None,
+    ) -> None:
+        """Draw a vertical alpha-faded gradient over an area.
+
+        Renders by alpha-compositing an RGBA overlay onto the canvas so the
+        underlying image (e.g. album art) shows through the top of the
+        gradient. Used for the watchOS now-playing fade.
 
         Args:
-            color1: First RGB color
-            color2: Second RGB color
-            factor: Blend factor (0 = color1, 1 = color2)
+            draw: ImageDraw whose underlying image will be modified in place
+            rect: (x1, y1, x2, y2) area in unscaled coords
+            color: Gradient color (typically black)
+            direction: "down" → transparent at top, opaque at bottom
+                       "up"   → opaque at top, transparent at bottom
+            steps: Number of gradient steps (default 32)
+        """
+        x1, y1, x2, y2 = self._scale_rect(rect)
+        canvas: Image.Image = draw._image  # noqa: SLF001
+        w = max(1, x2 - x1)
+        h = max(1, y2 - y1)
+
+        # Build an RGBA gradient overlay with alpha 0..255 along the axis.
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        n = steps or max(8, h // 4)
+        n = max(2, n)
+
+        # Switch canvas mode if needed (we modify draw._image in place).
+        canvas_rgba = canvas.convert("RGBA") if canvas.mode != "RGBA" else canvas
+
+        for i in range(n):
+            t = i / (n - 1)  # 0..1
+            alpha = int(255 * (t if direction == "down" else 1 - t))
+            row_y1 = int(h * i / n)
+            row_y2 = int(h * (i + 1) / n)
+            ImageDraw.Draw(overlay).rectangle(
+                (0, row_y1, w, row_y2),
+                fill=(color[0], color[1], color[2], alpha),
+            )
+
+        canvas_rgba.alpha_composite(overlay, dest=(x1, y1))
+
+        if canvas.mode != "RGBA":
+            # Write the composited result back to the original RGB image.
+            canvas.paste(canvas_rgba.convert("RGB"))
+
+    def tint_at(
+        self,
+        color: tuple[int, int, int],
+        opacity: float,
+        background: tuple[int, int, int] = COLOR_BLACK,
+    ) -> tuple[int, int, int]:
+        """Compute a tint color at a given opacity over a background.
+
+        Used for tinted track colors on bars/rings/arcs (watchOS-style).
+        Equivalent to compositing `color` at `opacity` onto `background`.
+
+        Args:
+            color: Tint RGB
+            opacity: 0.0..1.0 fraction of tint to mix in
+            background: Underlying surface color (defaults to black)
 
         Returns:
-            Blended RGB color
+            RGB color
         """
+        opacity = max(0.0, min(1.0, opacity))
         return (
-            int(color1[0] + (color2[0] - color1[0]) * factor),
-            int(color1[1] + (color2[1] - color1[1]) * factor),
-            int(color1[2] + (color2[2] - color1[2]) * factor),
+            int(background[0] + (color[0] - background[0]) * opacity),
+            int(background[1] + (color[1] - background[1]) * opacity),
+            int(background[2] + (color[2] - background[2]) * opacity),
         )
 
     def get_text_size(
@@ -1052,111 +1042,3 @@ class Renderer:
         buffer = BytesIO()
         final_img.save(buffer, format="PNG")
         return buffer.getvalue()
-
-    def draw_welcome_screen(self, draw: ImageDraw.ImageDraw) -> None:
-        """Draw a welcome screen when no configuration is set.
-
-        Args:
-            draw: ImageDraw instance
-        """
-        center_x = self.width // 2
-        center_y = self.height // 2
-
-        # Draw a subtle gradient-like background with concentric rounded rects
-        for i in range(3):
-            offset = i * 15
-            shade = 30 - i * 8
-            self.draw_rounded_rect(
-                draw,
-                (offset, offset, self.width - offset, self.height - offset),
-                radius=20 - i * 5,
-                fill=(shade, shade, shade + 5),
-            )
-
-        # Draw a decorative icon (gear/settings)
-        icon_y = center_y - 50
-        icon_size = 40
-        gear_color = COLOR_CYAN
-
-        # Draw gear circle
-        self.draw_ellipse(
-            draw,
-            (
-                center_x - icon_size // 2,
-                icon_y - icon_size // 2,
-                center_x + icon_size // 2,
-                icon_y + icon_size // 2,
-            ),
-            outline=gear_color,
-        )
-        # Inner circle
-        inner_size = icon_size // 3
-        self.draw_ellipse(
-            draw,
-            (
-                center_x - inner_size // 2,
-                icon_y - inner_size // 2,
-                center_x + inner_size // 2,
-                icon_y + inner_size // 2,
-            ),
-            fill=gear_color,
-        )
-
-        # Draw gear teeth (8 small rectangles around the circle)
-        tooth_len = 8
-        tooth_width = 6
-
-        for angle in range(0, 360, 45):
-            rad = math.radians(angle)
-            # Tooth position (outside the circle)
-            tx = center_x + int((icon_size // 2 + 2) * math.cos(rad))
-            ty = icon_y + int((icon_size // 2 + 2) * math.sin(rad))
-            # Draw small rectangle as tooth
-            self.draw_rect(
-                draw,
-                (
-                    tx - tooth_width // 2,
-                    ty - tooth_len // 2,
-                    tx + tooth_width // 2,
-                    ty + tooth_len // 2,
-                ),
-                fill=gear_color,
-            )
-
-        # Title text
-        self.draw_text(
-            draw,
-            "GeekMagic",
-            (center_x, center_y + 10),
-            font=self.font_large,
-            color=COLOR_WHITE,
-            anchor="mm",
-        )
-
-        # Subtitle
-        self.draw_text(
-            draw,
-            "Home Assistant",
-            (center_x, center_y + 35),
-            font=self.font_small,
-            color=COLOR_CYAN,
-            anchor="mm",
-        )
-
-        # Instructions
-        self.draw_text(
-            draw,
-            "Configure in",
-            (center_x, center_y + 65),
-            font=self.font_tiny,
-            color=COLOR_GRAY,
-            anchor="mm",
-        )
-        self.draw_text(
-            draw,
-            "Settings → Integrations",
-            (center_x, center_y + 80),
-            font=self.font_tiny,
-            color=COLOR_GRAY,
-            anchor="mm",
-        )

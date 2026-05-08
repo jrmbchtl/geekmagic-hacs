@@ -1,166 +1,135 @@
 """Convenience component factories for common widget patterns.
 
-These functions return pre-built component trees for common layouts,
-reducing boilerplate in widget implementations.
+Each gauge / value helper here is now a thin shim over ``DataCard`` —
+the layout policy lives in one place, and these factories just choose
+the right indicator (``Bar`` / ``VerticalBar`` / ``Ring`` / ``Arc``) and
+the right ``icon_role``.
 
 Example:
-    def render(self, ctx, hass) -> Component:
-        return BarGauge(percent=75, value="75%", label="CPU", color=COLOR_CYAN)
+
+    return BarGauge(percent=75, value="75%", label="CPU", color=THEME_PRIMARY)
+
+is equivalent to:
+
+    return DataCard(
+        caption="CPU",
+        hero="75%",
+        hero_color=THEME_PRIMARY,
+        indicator=Bar(percent=75, color=THEME_PRIMARY),
+    )
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
+
 from .components import (
     THEME_TEXT_PRIMARY,
     THEME_TEXT_SECONDARY,
-    Adaptive,
     Arc,
     Bar,
-    Column,
     Component,
-    Empty,
-    Icon,
-    IconValueDisplay,
     Ring,
-    Row,
-    Spacer,
-    Stack,
-    Text,
+    VerticalBar,
 )
+from .data_card import DataCard, pick_card_mode
+
+if TYPE_CHECKING:
+    from ..render_context import RenderContext
 
 Color = tuple[int, int, int]
 
+BarGaugeMode = Literal["auto", "compact", "stacked", "vertical"]
 
-def BarGauge(
-    percent: float,
-    value: str,
-    label: str,
-    color: Color,
-    icon: str | None = None,
-    background: Color | None = None,  # None = use theme.bar_background
-    padding: int = 8,
-) -> Component:
-    """Bar gauge with header row (icon/label/value) and progress bar below.
 
-    Automatically adapts header to horizontal/vertical based on space.
-
-    Args:
-        percent: Progress percentage (0-100)
-        value: Display value (e.g., "75%")
-        label: Label text
-        color: Bar and icon color
-        icon: Optional icon name
-        background: Bar background color
-        padding: Outer padding
-
-    Returns:
-        Component tree for bar gauge
+@dataclass
+class BarGauge(Component):
+    """Adaptive bar gauge — DataCard with a ``Bar`` (or ``VerticalBar``)
+    indicator. Mode is resolved by ``pick_card_mode``: tall+narrow
+    cells get a ``VerticalBar``, square-ish roomy cells get the
+    Modular-Large stacked look, everything else gets the compact
+    horizontal bar.
     """
-    header_children: list[Component | None] = []
-    if icon:
-        # Fixed 16px icon size for header to prevent oversized icons
-        header_children.append(Icon(icon, size=16, color=color))
-    header_children.extend(
-        [
-            Text(label.upper(), font="tiny", color=THEME_TEXT_SECONDARY),
-            Spacer(),
-            Text(value, font="medium", bold=True, color=THEME_TEXT_PRIMARY),
-        ]
-    )
 
-    return Column(
-        gap=6,
-        padding=padding,
-        justify="center",
-        children=[
-            Adaptive(children=[c for c in header_children if c is not None], gap=6),
-            Bar(percent=percent, color=color, background=background),
-        ],
-    )
+    percent: float
+    value: str
+    label: str
+    color: Color
+    icon: str | None = None
+    background: Color | None = None  # None = theme tinted track
+    padding: int = 6
+    mode: BarGaugeMode = "auto"
 
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        return (max_width, max_height)
 
-def RingGauge(
-    percent: float,
-    value: str,
-    label: str,
-    color: Color,
-    background: Color | None = None,  # None = use theme.bar_background
-) -> Component:
-    """Ring gauge with centered value and label overlay.
-
-    Args:
-        percent: Progress percentage (0-100)
-        value: Display value (e.g., "75%")
-        label: Label text
-        color: Ring color
-        background: Ring background color
-
-    Returns:
-        Component tree for ring gauge
-    """
-    return Stack(
-        children=[
-            Ring(percent=percent, color=color, background=background),
-            Column(
-                align="center",
-                justify="center",
-                gap=4,
-                children=[
-                    Text(value, font="large", color=THEME_TEXT_PRIMARY),
-                    Text(label.upper(), font="tiny", color=THEME_TEXT_SECONDARY),
-                ],
-            ),
-        ],
-    )
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        # Pick the indicator first so DataCard's auto-mode can promote
+        # tall+narrow cells to vertical (which needs a VerticalBar).
+        if self.mode == "vertical" or (
+            self.mode == "auto"
+            and pick_card_mode(width, height) == "compact"
+            and height > width * 1.8
+        ):
+            indicator: Component = VerticalBar(
+                percent=self.percent, color=self.color, background=self.background
+            )
+        else:
+            indicator = Bar(percent=self.percent, color=self.color, background=self.background)
+        DataCard(
+            caption=self.label,
+            icon=self.icon,
+            icon_color=self.color,
+            icon_role="feature",
+            hero=self.value,
+            hero_color=self.color,  # Activity-bar style: hero matches the bar tint
+            indicator=indicator,
+        ).render(ctx, x, y, width, height)
 
 
-def ArcGauge(
-    percent: float,
-    value: str,
-    label: str,
-    color: Color,
-    background: Color | None = None,  # None = use theme.bar_background
-) -> Component:
-    """Arc gauge (270 degrees) with centered value and label at top.
+@dataclass
+class RingGauge(Component):
+    """Adaptive ring gauge — DataCard with a ``Ring`` indicator (mode="ring")."""
 
-    Args:
-        percent: Progress percentage (0-100)
-        value: Display value
-        label: Label text
-        color: Arc color
-        background: Arc background color
+    percent: float
+    value: str
+    label: str
+    color: Color
+    background: Color | None = None  # None = theme tinted track
 
-    Returns:
-        Component tree for arc gauge
-    """
-    return Stack(
-        children=[
-            Column(
-                justify="start",
-                align="center",
-                padding=4,
-                children=[
-                    Text(label.upper(), font="tiny", color=THEME_TEXT_SECONDARY),
-                ],
-            ),
-            # Add top padding to arc so it doesn't overlap with label
-            Column(
-                justify="center",
-                align="center",
-                padding=12,
-                children=[
-                    Arc(percent=percent, color=color, background=background),
-                ],
-            ),
-            Column(
-                align="center",
-                justify="center",
-                children=[
-                    Text(value, font="medium", color=THEME_TEXT_PRIMARY),
-                ],
-            ),
-        ],
-    )
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        return (max_width, max_height)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        DataCard(
+            caption=self.label,
+            hero=self.value,
+            hero_color=self.color,
+            indicator=Ring(percent=self.percent, color=self.color, background=self.background),
+        ).render(ctx, x, y, width, height)
+
+
+@dataclass
+class ArcGauge(Component):
+    """Adaptive arc gauge — DataCard with an ``Arc`` indicator (mode="ring")."""
+
+    percent: float
+    value: str
+    label: str
+    color: Color
+    background: Color | None = None  # None = theme tinted track
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        return (max_width, max_height)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        DataCard(
+            caption=self.label,
+            hero=self.value,
+            hero_color=self.color,
+            indicator=Arc(percent=self.percent, color=self.color, background=self.background),
+        ).render(ctx, x, y, width, height)
 
 
 def IconValue(
@@ -172,28 +141,14 @@ def IconValue(
     label_color: Color = THEME_TEXT_SECONDARY,
     icon_size: int | None = None,
 ) -> Component:
-    """Icon with value and label - uses IconValueDisplay for proper sizing.
-
-    Args:
-        icon: Icon name
-        value: Display value
-        label: Label text
-        color: Icon color
-        value_color: Value text color
-        label_color: Label text color
-        icon_size: Optional fixed icon size
-
-    Returns:
-        IconValueDisplay component
-    """
-    return IconValueDisplay(
+    """Icon with value and label — backed by ``DataCard``."""
+    return DataCard(
+        caption=label or None,
         icon=icon,
-        value=value,
-        label=label,
         icon_color=color,
-        value_color=value_color,
-        label_color=label_color,
-        icon_size=icon_size,
+        icon_role="feature",
+        hero=value,
+        hero_color=value_color,
     )
 
 
@@ -205,182 +160,18 @@ def CenteredValue(
     value_font: str = "large",
     label_font: str = "small",
 ) -> Component:
-    """Centered value with optional label below.
-
-    Args:
-        value: Display value
-        label: Optional label text
-        value_color: Value text color
-        label_color: Label text color
-        value_font: Font size for value
-        label_font: Font size for label
-
-    Returns:
-        Component tree
-    """
-    children: list[Component] = [
-        Text(value, font=value_font, color=value_color),
-    ]
-    if label:
-        children.append(Text(label.upper(), font=label_font, color=label_color))
-
-    return Column(
-        align="center",
-        justify="center",
-        gap=8,
-        children=children,
+    """Centered value with optional label — backed by ``DataCard``."""
+    return DataCard(
+        caption=label,
+        hero=value,
+        hero_color=value_color,
     )
-
-
-def LabelValue(
-    label: str,
-    value: str,
-    label_color: Color = THEME_TEXT_SECONDARY,
-    value_color: Color = THEME_TEXT_PRIMARY,
-    font: str = "small",
-) -> Component:
-    """Horizontal label + value pair that adapts to available space.
-
-    Args:
-        label: Label text
-        value: Value text
-        label_color: Label text color
-        value_color: Value text color
-        font: Font size for both
-
-    Returns:
-        Component tree
-    """
-    return Adaptive(
-        children=[
-            Text(label, font=font, color=label_color, align="start"),
-            Spacer(),
-            Text(value, font=font, color=value_color, align="end"),
-        ],
-        gap=6,
-    )
-
-
-def StatusIndicator(
-    label: str,
-    is_on: bool,
-    on_color: Color,
-    off_color: Color,
-    on_text: str = "ON",
-    off_text: str = "OFF",
-) -> Component:
-    """Status indicator with colored dot and status text.
-
-    Args:
-        label: Item label
-        is_on: Whether status is on/active
-        on_color: Color when on
-        off_color: Color when off
-        on_text: Text to show when on
-        off_text: Text to show when off
-
-    Returns:
-        Component tree
-    """
-    color = on_color if is_on else off_color
-    status_text = on_text if is_on else off_text
-
-    return Row(
-        gap=10,
-        align="center",
-        justify="space-between",
-        children=[
-            Row(
-                gap=8,
-                children=[
-                    # Status indicator icon - 14px for visibility on small display
-                    Icon("check" if is_on else "warning", size=14, color=color),
-                    Text(label, font="small", color=THEME_TEXT_PRIMARY),
-                ],
-            ),
-            Text(status_text, font="small", color=color),
-        ],
-    )
-
-
-def ProgressRow(
-    label: str,
-    value: str,
-    percent: float,
-    color: Color,
-    icon: str | None = None,
-) -> Component:
-    """Single progress row with label, value, bar, and percentage.
-
-    Args:
-        label: Label text
-        value: Value/target text (e.g., "680/800")
-        percent: Progress percentage
-        color: Progress bar color
-        icon: Optional icon
-
-    Returns:
-        Component tree
-    """
-    header_children: list[Component | None] = []
-    if icon:
-        # Fixed 14px icon for progress row header
-        header_children.append(Icon(icon, size=14, color=color))
-    header_children.extend(
-        [
-            Text(label.upper(), font="tiny", color=THEME_TEXT_SECONDARY),
-            Spacer(),
-            Text(value, font="small", color=THEME_TEXT_PRIMARY),
-        ]
-    )
-
-    return Column(
-        gap=4,
-        children=[
-            Row(
-                gap=6,
-                justify="space-between",
-                children=[c for c in header_children if c is not None],
-            ),
-            Row(
-                gap=6,
-                children=[
-                    Bar(percent=percent, color=color, height=6),
-                    Text(f"{percent:.0f}%", font="tiny", color=THEME_TEXT_PRIMARY),
-                ],
-            ),
-        ],
-    )
-
-
-def Conditional(
-    condition: bool,
-    if_true: Component,
-    if_false: Component | None = None,
-) -> Component:
-    """Conditional component rendering.
-
-    Args:
-        condition: Condition to evaluate
-        if_true: Component to render if condition is True
-        if_false: Component to render if condition is False (default: Empty)
-
-    Returns:
-        The appropriate component based on condition
-    """
-    if condition:
-        return if_true
-    return if_false or Empty()
 
 
 __all__ = [
     "ArcGauge",
     "BarGauge",
     "CenteredValue",
-    "Conditional",
     "IconValue",
-    "LabelValue",
-    "ProgressRow",
     "RingGauge",
-    "StatusIndicator",
 ]
