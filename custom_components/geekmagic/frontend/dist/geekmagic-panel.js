@@ -22,7 +22,7 @@ let de = class {
     return this.cssText;
   }
 };
-const fe = (s) => new de(typeof s == "string" ? s : s + "", void 0, K), me = (s, ...e) => {
+const me = (s) => new de(typeof s == "string" ? s : s + "", void 0, K), fe = (s, ...e) => {
   const t = s.length === 1 ? s[0] : e.reduce((i, r, a) => i + ((o) => {
     if (o._$cssResult$ === !0) return o.cssText;
     if (typeof o == "number") return o;
@@ -38,7 +38,7 @@ const fe = (s) => new de(typeof s == "string" ? s : s + "", void 0, K), me = (s,
 }, X = G ? (s) => s : (s) => s instanceof CSSStyleSheet ? ((e) => {
   let t = "";
   for (const i of e.cssRules) t += i.cssText;
-  return fe(t);
+  return me(t);
 })(s) : s;
 /**
  * @license
@@ -296,8 +296,8 @@ const Ve = (s, e) => {
   let r, a = e === 2 ? "<svg>" : e === 3 ? "<math>" : "", o = S;
   for (let l = 0; l < t; l++) {
     const n = s[l];
-    let h, u, d = -1, m = 0;
-    for (; m < n.length && (o.lastIndex = m, u = o.exec(n), u !== null); ) m = o.lastIndex, o === S ? u[1] === "!--" ? o = se : u[1] !== void 0 ? o = re : u[2] !== void 0 ? (ue.test(u[2]) && (r = RegExp("</" + u[2], "g")), o = w) : u[3] !== void 0 && (o = w) : o === w ? u[0] === ">" ? (o = r ?? S, d = -1) : u[1] === void 0 ? d = -2 : (d = o.lastIndex - u[2].length, h = u[1], o = u[3] === void 0 ? w : u[3] === '"' ? oe : ae) : o === oe || o === ae ? o = w : o === se || o === re ? o = S : (o = w, r = void 0);
+    let h, u, d = -1, f = 0;
+    for (; f < n.length && (o.lastIndex = f, u = o.exec(n), u !== null); ) f = o.lastIndex, o === S ? u[1] === "!--" ? o = se : u[1] !== void 0 ? o = re : u[2] !== void 0 ? (ue.test(u[2]) && (r = RegExp("</" + u[2], "g")), o = w) : u[3] !== void 0 && (o = w) : o === w ? u[0] === ">" ? (o = r ?? S, d = -1) : u[1] === void 0 ? d = -2 : (d = o.lastIndex - u[2].length, h = u[1], o = u[3] === void 0 ? w : u[3] === '"' ? oe : ae) : o === oe || o === ae ? o = w : o === se || o === re ? o = S : (o = w, r = void 0);
     const _ = o === w && s[l + 1].startsWith("/>") ? " " : "";
     a += o === S ? n + ke : d >= 0 ? (i.push(h), n.slice(0, d) + he + n.slice(d) + y + _) : n + y + (d === -2 ? l : _);
   }
@@ -316,15 +316,15 @@ class L {
     for (; (r = b.nextNode()) !== null && n.length < l; ) {
       if (r.nodeType === 1) {
         if (r.hasAttributes()) for (const d of r.getAttributeNames()) if (d.endsWith(he)) {
-          const m = u[o++], _ = r.getAttribute(d).split(y), U = /([.?@])?(.*)/.exec(m);
+          const f = u[o++], _ = r.getAttribute(d).split(y), U = /([.?@])?(.*)/.exec(f);
           n.push({ type: 1, index: a, name: U[2], strings: _, ctor: U[1] === "." ? Oe : U[1] === "?" ? Me : U[1] === "@" ? Ce : R }), r.removeAttribute(d);
         } else d.startsWith(y) && (n.push({ type: 6, index: a }), r.removeAttribute(d));
         if (ue.test(r.tagName)) {
-          const d = r.textContent.split(y), m = d.length - 1;
-          if (m > 0) {
+          const d = r.textContent.split(y), f = d.length - 1;
+          if (f > 0) {
             r.textContent = z ? z.emptyScript : "";
-            for (let _ = 0; _ < m; _++) r.append(d[_], M()), b.nextNode(), n.push({ type: 2, index: ++a });
-            r.append(d[m], M());
+            for (let _ = 0; _ < f; _++) r.append(d[_], M()), b.nextNode(), n.push({ type: 2, index: ++a });
+            r.append(d[f], M());
           }
         }
       } else if (r.nodeType === 8) if (r.data === pe) n.push({ type: 2, index: a });
@@ -598,7 +598,7 @@ function T(s) {
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-function f(s) {
+function m(s) {
   return T({ ...s, state: !0, attribute: !1 });
 }
 function j(s) {
@@ -953,13 +953,13 @@ let g = class extends O {
           .path=${"M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"}
           @click=${() => this._page = "main"}
         ></ha-icon-button>
-        <ha-textfield
+        <ha-input
           .value=${this._editingView.name}
           @input=${(t) => this._updateEditingView({
       name: t.target.value
     })}
           placeholder="View name"
-        ></ha-textfield>
+        ></ha-input>
         <ha-button raised ?disabled=${this._saving} @click=${this._saveView}>
           ${this._saving ? "Saving..." : "Save"}
         </ha-button>
@@ -1099,13 +1099,13 @@ let g = class extends O {
               ` : p}
 
           <div class="slot-field">
-            <ha-textfield
+            <ha-input
               label="Label (optional)"
               .value=${(t == null ? void 0 : t.label) || ""}
               @input=${(l) => this._updateWidget(s, {
       label: l.target.value
     })}
-            ></ha-textfield>
+            ></ha-input>
           </div>
 
           ${(o = r == null ? void 0 : r.options) != null && o.length ? c`
@@ -1162,7 +1162,7 @@ let g = class extends O {
       case "number":
         return c`
           <div class="option-field">
-            <ha-textfield
+            <ha-input
               type="number"
               .label=${t.label}
               .value=${i !== void 0 ? String(i) : ""}
@@ -1176,13 +1176,13 @@ let g = class extends O {
             l ? parseFloat(l) : void 0
           );
         }}
-            ></ha-textfield>
+            ></ha-input>
           </div>
         `;
       case "text":
         return c`
           <div class="option-field">
-            <ha-textfield
+            <ha-input
               .label=${t.label}
               .value=${i || ""}
               .placeholder=${t.placeholder || ""}
@@ -1191,7 +1191,7 @@ let g = class extends O {
           t.key,
           o.target.value
         )}
-            ></ha-textfield>
+            ></ha-input>
           </div>
         `;
       case "icon":
@@ -1220,7 +1220,7 @@ let g = class extends O {
                 class="color-preview-swatch"
                 style="background-color: ${j(i)}"
               ></div>
-              <ha-textfield
+              <ha-input
                 .value=${j(i)}
                 .label=${"Hex (fallback)"}
                 placeholder="#FF5500 or 255,85,0"
@@ -1230,7 +1230,7 @@ let g = class extends O {
           );
           l && this._updateWidgetOption(s, t.key, l);
         }}
-              ></ha-textfield>
+              ></ha-input>
             </div>
           </div>
         `;
@@ -1301,7 +1301,7 @@ let g = class extends O {
       (r, a) => c`
                 <div class="threshold-item-container">
                   <div class="threshold-item">
-                    <ha-textfield
+                    <ha-input
                       class="threshold-value"
                       type="number"
                       label="Value"
@@ -1313,7 +1313,7 @@ let g = class extends O {
           value: parseFloat(o.target.value) || 0
         }, this._updateWidgetOption(s, e, l);
       }}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-selector
                       .hass=${this.hass}
                       .selector=${{ color_rgb: {} }}
@@ -1336,7 +1336,7 @@ let g = class extends O {
                       class="color-preview-swatch"
                       style="background-color: ${j(r.color)}"
                     ></div>
-                    <ha-textfield
+                    <ha-input
                       class="threshold-hex-input"
                       .value=${j(r.color)}
                       label="Hex (fallback)"
@@ -1350,7 +1350,7 @@ let g = class extends O {
           n[a] = { ...r, color: l }, this._updateWidgetOption(s, e, n);
         }
       }}
-                    ></ha-textfield>
+                    ></ha-input>
                   </div>
                 </div>
               `
@@ -1423,21 +1423,21 @@ let g = class extends O {
         entity_id: n.detail.value
       })}
                     ></ha-selector>
-                    <ha-textfield
+                    <ha-input
                       label="Label"
                       .value=${r.label || ""}
                       @input=${(n) => this._updateArrayItem(s, e, i, a, {
         label: n.target.value
       })}
-                    ></ha-textfield>
-                    <ha-textfield
+                    ></ha-input>
+                    <ha-input
                       type="number"
                       label="Target"
                       .value=${r.target !== void 0 ? String(r.target) : "100"}
                       @input=${(n) => this._updateArrayItem(s, e, i, a, {
         target: parseFloat(n.target.value) || 100
       })}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-icon-picker
                       .hass=${this.hass}
                       label="Icon"
@@ -1527,13 +1527,13 @@ let g = class extends O {
         entity_id: n.detail.value
       })}
                     ></ha-selector>
-                    <ha-textfield
+                    <ha-input
                       label="Label"
                       .value=${r.label || ""}
                       @input=${(n) => this._updateArrayItem(s, e, i, a, {
         label: n.target.value
       })}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-icon-picker
                       .hass=${this.hass}
                       label="Icon"
@@ -1661,7 +1661,7 @@ let g = class extends O {
     i && (i.slot = e), r && (r.slot = s), this._editingView = { ...this._editingView, widgets: [...t] }, this.requestUpdate(), this._refreshPreview();
   }
 };
-g.styles = me`
+g.styles = fe`
     :host {
       display: flex;
       flex-direction: column;
@@ -1843,7 +1843,7 @@ g.styles = me`
       margin-bottom: 24px;
     }
 
-    .editor-header ha-textfield {
+    .editor-header ha-input {
       flex: 1;
     }
 
@@ -2088,7 +2088,7 @@ g.styles = me`
     }
 
     ha-select,
-    ha-textfield {
+    ha-input {
       display: block;
       width: 100%;
     }
@@ -2259,7 +2259,7 @@ g.styles = me`
       margin-top: 8px;
     }
 
-    .color-hex-input ha-textfield {
+    .color-hex-input ha-input {
       flex: 1;
     }
 
@@ -2352,37 +2352,37 @@ v([
   T({ attribute: !1 })
 ], g.prototype, "panel", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_page", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_config", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_views", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_devices", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_editingView", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_previewImage", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_previewLoading", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_loading", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_saving", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_expandedItems", 2);
 v([
-  f()
+  m()
 ], g.prototype, "_viewPreviews", 2);
 g = v([
   Te("geekmagic-panel")

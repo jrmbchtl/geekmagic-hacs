@@ -271,7 +271,7 @@ export class GeekMagicPanel extends LitElement {
       margin-bottom: 24px;
     }
 
-    .editor-header ha-textfield {
+    .editor-header ha-input {
       flex: 1;
     }
 
@@ -516,7 +516,7 @@ export class GeekMagicPanel extends LitElement {
     }
 
     ha-select,
-    ha-textfield {
+    ha-input {
       display: block;
       width: 100%;
     }
@@ -687,7 +687,7 @@ export class GeekMagicPanel extends LitElement {
       margin-top: 8px;
     }
 
-    .color-hex-input ha-textfield {
+    .color-hex-input ha-input {
       flex: 1;
     }
 
@@ -1124,14 +1124,14 @@ export class GeekMagicPanel extends LitElement {
           .path=${"M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"}
           @click=${() => (this._page = "main")}
         ></ha-icon-button>
-        <ha-textfield
+        <ha-input
           .value=${this._editingView.name}
           @input=${(e: Event) =>
             this._updateEditingView({
               name: (e.target as HTMLInputElement).value,
             })}
           placeholder="View name"
-        ></ha-textfield>
+        ></ha-input>
         <ha-button raised ?disabled=${this._saving} @click=${this._saveView}>
           ${this._saving ? "Saving..." : "Save"}
         </ha-button>
@@ -1284,14 +1284,14 @@ export class GeekMagicPanel extends LitElement {
             : nothing}
 
           <div class="slot-field">
-            <ha-textfield
+            <ha-input
               label="Label (optional)"
               .value=${widget?.label || ""}
               @input=${(e: Event) =>
                 this._updateWidget(slot, {
                   label: (e.target as HTMLInputElement).value,
                 })}
-            ></ha-textfield>
+            ></ha-input>
           </div>
 
           ${schema?.options?.length
@@ -1360,7 +1360,7 @@ export class GeekMagicPanel extends LitElement {
       case "number":
         return html`
           <div class="option-field">
-            <ha-textfield
+            <ha-input
               type="number"
               .label=${opt.label}
               .value=${value !== undefined ? String(value) : ""}
@@ -1374,14 +1374,14 @@ export class GeekMagicPanel extends LitElement {
                   val ? parseFloat(val) : undefined
                 );
               }}
-            ></ha-textfield>
+            ></ha-input>
           </div>
         `;
 
       case "text":
         return html`
           <div class="option-field">
-            <ha-textfield
+            <ha-input
               .label=${opt.label}
               .value=${value || ""}
               .placeholder=${opt.placeholder || ""}
@@ -1391,7 +1391,7 @@ export class GeekMagicPanel extends LitElement {
                   opt.key,
                   (e.target as HTMLInputElement).value
                 )}
-            ></ha-textfield>
+            ></ha-input>
           </div>
         `;
 
@@ -1424,7 +1424,7 @@ export class GeekMagicPanel extends LitElement {
                 class="color-preview-swatch"
                 style="background-color: ${rgbToHex(value as RGBTuple)}"
               ></div>
-              <ha-textfield
+              <ha-input
                 .value=${rgbToHex(value as RGBTuple)}
                 .label=${"Hex (fallback)"}
                 placeholder="#FF5500 or 255,85,0"
@@ -1436,7 +1436,7 @@ export class GeekMagicPanel extends LitElement {
                     this._updateWidgetOption(slot, opt.key, parsed);
                   }
                 }}
-              ></ha-textfield>
+              ></ha-input>
             </div>
           </div>
         `;
@@ -1530,7 +1530,7 @@ export class GeekMagicPanel extends LitElement {
               (item, idx) => html`
                 <div class="threshold-item-container">
                   <div class="threshold-item">
-                    <ha-textfield
+                    <ha-input
                       class="threshold-value"
                       type="number"
                       label="Value"
@@ -1543,7 +1543,7 @@ export class GeekMagicPanel extends LitElement {
                         };
                         this._updateWidgetOption(slot, key, newItems);
                       }}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-selector
                       .hass=${this.hass}
                       .selector=${{ color_rgb: {} }}
@@ -1567,7 +1567,7 @@ export class GeekMagicPanel extends LitElement {
                       class="color-preview-swatch"
                       style="background-color: ${rgbToHex(item.color as RGBTuple)}"
                     ></div>
-                    <ha-textfield
+                    <ha-input
                       class="threshold-hex-input"
                       .value=${rgbToHex(item.color as RGBTuple)}
                       label="Hex (fallback)"
@@ -1582,7 +1582,7 @@ export class GeekMagicPanel extends LitElement {
                           this._updateWidgetOption(slot, key, newItems);
                         }
                       }}
-                    ></ha-textfield>
+                    ></ha-input>
                   </div>
                 </div>
               `
@@ -1671,15 +1671,15 @@ export class GeekMagicPanel extends LitElement {
                           entity_id: e.detail.value,
                         })}
                     ></ha-selector>
-                    <ha-textfield
+                    <ha-input
                       label="Label"
                       .value=${item.label || ""}
                       @input=${(e: Event) =>
                         this._updateArrayItem(slot, key, progressItems, idx, {
                           label: (e.target as HTMLInputElement).value,
                         })}
-                    ></ha-textfield>
-                    <ha-textfield
+                    ></ha-input>
+                    <ha-input
                       type="number"
                       label="Target"
                       .value=${item.target !== undefined ? String(item.target) : "100"}
@@ -1687,7 +1687,7 @@ export class GeekMagicPanel extends LitElement {
                         this._updateArrayItem(slot, key, progressItems, idx, {
                           target: parseFloat((e.target as HTMLInputElement).value) || 100,
                         })}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-icon-picker
                       .hass=${this.hass}
                       label="Icon"
@@ -1798,14 +1798,14 @@ export class GeekMagicPanel extends LitElement {
                           entity_id: e.detail.value,
                         })}
                     ></ha-selector>
-                    <ha-textfield
+                    <ha-input
                       label="Label"
                       .value=${item.label || ""}
                       @input=${(e: Event) =>
                         this._updateArrayItem(slot, key, statusEntities, idx, {
                           label: (e.target as HTMLInputElement).value,
                         })}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-icon-picker
                       .hass=${this.hass}
                       label="Icon"
