@@ -337,6 +337,8 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self._camera_images: dict[str, bytes] = {}  # Pre-fetched camera images
         self._media_images: dict[str, bytes] = {}  # Pre-fetched media player album art
+        # Entities whose last media-art fetch produced a WARNING (cleared on success)
+        self._media_image_warned: set[str] = set()
         self._chart_history: dict[str, list[float]] = {}  # Pre-fetched chart history
         self._candlestick_data: dict[str, list[tuple[float, float, float, float]]] = {}
         self._weather_forecasts: dict[str, list[dict[str, Any]]] = {}  # Pre-fetched forecasts
@@ -715,10 +717,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             Dict mapping slot index to WidgetState
         """
         from datetime import UTC
-        from io import BytesIO
         from zoneinfo import ZoneInfo
-
-        from PIL import Image
 
         states: dict[int, WidgetState] = {}
 
@@ -769,13 +768,13 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             if isinstance(widget, CameraWidget) and widget.config.entity_id:
                 image_bytes = self._camera_images.get(widget.config.entity_id)
                 if image_bytes:
-                    with contextlib.suppress(Exception):
-                        image = Image.open(BytesIO(image_bytes))
+                    image = self._decode_cached_image(
+                        widget.config.entity_id, image_bytes, "camera"
+                    )
             elif isinstance(widget, MediaWidget) and widget.config.entity_id:
                 image_bytes = self._media_images.get(widget.config.entity_id)
                 if image_bytes:
-                    with contextlib.suppress(Exception):
-                        image = Image.open(BytesIO(image_bytes))
+                    image = self._decode_cached_image(widget.config.entity_id, image_bytes, "media")
 
             # Get pre-fetched weather forecast
             forecast: list[dict[str, Any]] = []
@@ -1550,20 +1549,37 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             if state is None:
                 continue
 
-            # Get entity_picture from attributes
             entity_picture = state.attributes.get("entity_picture")
-            if not entity_picture or not entity_picture.startswith("/"):
-                # Clear any cached image if no internal picture available
+            if not entity_picture:
+                # No art available — drop cached bytes and reset warn state
                 self._media_images.pop(entity_id, None)
+                self._media_image_warned.discard(entity_id)
                 continue
 
-            try:
-                base_url = get_url(self.hass)
-            except NoURLAvailableError:
+            # Some integrations (Music Assistant, certain Spotify/Sonos configs)
+            # expose entity_picture as a full http(s):// URL — fetch those directly.
+            # Internal paths like /api/media_player_proxy/... are joined with the
+            # configured HA base URL.
+            if entity_picture.startswith(("http://", "https://")):
+                image_url = entity_picture
+            elif entity_picture.startswith("/"):
+                try:
+                    base_url = get_url(self.hass)
+                except NoURLAvailableError:
+                    _LOGGER.debug(
+                        "No base URL available to fetch album art for %s",
+                        entity_id,
+                    )
+                    continue
+                image_url = f"{base_url.rstrip('/')}/{entity_picture.lstrip('/')}"
+            else:
+                self._media_images.pop(entity_id, None)
+                self._log_media_fetch_failure(
+                    entity_id,
+                    entity_picture,
+                    f"unsupported entity_picture scheme: {entity_picture[:40]!r}",
+                )
                 continue
-
-            # Ensure base_url doesn't have trailing slash and entity_picture has leading slash
-            image_url = f"{base_url.rstrip('/')}/{entity_picture.lstrip('/')}"
 
             try:
                 # Use Home Assistant's managed session so media proxy requests
@@ -1573,19 +1589,75 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                     if response.status == 200:
                         image_data = await response.read()
                         self._media_images[entity_id] = image_data
+                        self._media_image_warned.discard(entity_id)
                         _LOGGER.debug(
                             "Fetched album art for %s: %d bytes",
                             entity_id,
                             len(image_data),
                         )
                     else:
-                        _LOGGER.debug(
-                            "Failed to fetch album art for %s: HTTP %d",
-                            entity_id,
-                            response.status,
+                        self._media_images.pop(entity_id, None)
+                        self._log_media_fetch_failure(
+                            entity_id, image_url, f"HTTP {response.status}"
                         )
             except Exception as e:
-                _LOGGER.debug("Failed to fetch album art for %s: %s", entity_id, e)
+                self._media_images.pop(entity_id, None)
+                self._log_media_fetch_failure(entity_id, image_url, str(e) or type(e).__name__)
+
+    def _log_media_fetch_failure(self, entity_id: str, url: str, reason: str) -> None:
+        """Log a media-image fetch failure WARNING once per entity, then DEBUG.
+
+        On the first failure for an entity since its last success, log at WARNING
+        so users notice missing album art without enabling DEBUG. Subsequent
+        failures for the same entity log at DEBUG to avoid spam. A successful
+        fetch clears the warned flag — see ``_async_fetch_media_images``.
+        """
+        if entity_id in self._media_image_warned:
+            _LOGGER.debug(
+                "Failed to fetch album art for %s from %s: %s",
+                entity_id,
+                url,
+                reason,
+            )
+            return
+        self._media_image_warned.add(entity_id)
+        _LOGGER.warning(
+            "Failed to fetch album art for %s from %s: %s "
+            "(further failures for this entity will be logged at DEBUG)",
+            entity_id,
+            url,
+            reason,
+        )
+
+    def _decode_cached_image(self, entity_id: str, image_bytes: bytes, kind: str):
+        """Decode pre-fetched image bytes for an entity; log+evict on failure.
+
+        ``Image.open`` is lazy and only reads the header — the actual decode
+        happens later (e.g. in widget render code) where there is no logging
+        hook and a corrupt image silently downgrades to a text fallback.
+        Calling ``.load()`` here forces the decode so errors surface where we
+        can log them and drop the bad bytes from the cache.
+        """
+        from io import BytesIO
+
+        from PIL import Image
+
+        cache = self._media_images if kind == "media" else self._camera_images
+        try:
+            decoded = Image.open(BytesIO(image_bytes))
+            decoded.load()
+        except Exception as e:
+            _LOGGER.warning(
+                "Failed to decode %s image for %s (%d bytes): %s",
+                kind,
+                entity_id,
+                len(image_bytes),
+                e,
+            )
+            cache.pop(entity_id, None)
+            return None
+        else:
+            return decoded
 
     def _fetch_entity_history(self, entity_id: str, start: datetime, end: datetime) -> list:
         """Fetch history for an entity (sync, runs in executor).
