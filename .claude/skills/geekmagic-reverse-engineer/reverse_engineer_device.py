@@ -921,6 +921,24 @@ def main() -> int:
         if not args.no_probe:
             probe_safe(crawler)
 
+    # Bail before creating the run dir if we got nothing. Writing empty
+    # report files for an unreachable device pollutes `docs/devices/` and
+    # forces the user to `rm -rf` before retrying.
+    any_success = any(
+        not isinstance(r, _FailedResponse) and r.status_code == 200
+        for r in crawler.fetched.values()
+    )
+    if not any_success:
+        print(
+            _stderr_scrub(
+                f"[geekmagic-reverse-engineer] No successful fetches from "
+                f"{crawler.host}; device may be unreachable. "
+                f"Nothing written — try again."
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
     run_name = args.name or run_started.strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = args.out / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -1022,19 +1040,6 @@ def main() -> int:
     # Exit code: non-zero when the device looks unreachable. Lets CI / the
     # skill detect "couldn't talk to the device at all" vs. "discovered N
     # endpoints". Treat as unreachable if no resource came back 200.
-    any_success = any(
-        not isinstance(r, _FailedResponse) and r.status_code == 200
-        for r in crawler.fetched.values()
-    )
-    if not any_success:
-        print(
-            _stderr_scrub(
-                f"[geekmagic-reverse-engineer] No successful fetches from "
-                f"{crawler.host}; device may be unreachable."
-            ),
-            file=sys.stderr,
-        )
-        return 1
     return 0
 
 

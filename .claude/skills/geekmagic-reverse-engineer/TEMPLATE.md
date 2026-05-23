@@ -50,8 +50,12 @@
 | Identification endpoint | <!-- AGENT: which path returned the identity, e.g. `GET /v.json`. If none, write "none — inferred from <evidence>" --> |
 | Endpoints discovered | <!-- AGENT: copy the breakdown from run.json's `summary` field, e.g. "40 total — 25 probed OK, 8 4xx/5xx, 7 state-changing, 0 runtime-blocked" --> |
 
-<!-- AGENT: If `summary.runtime_blocked > 0` in run.json, add a callout here
-naming the URL(s) the page tried to fire on load. That's safety-relevant. -->
+<!-- AGENT: ONLY if `summary.runtime_blocked > 0` in run.json, add a
+callout here naming the URL(s) the page tried to fire on load (find them
+in report.raw.md's state-changing section, look for the `runtime_blocked`
+evidence kind). If the count is 0, DELETE THIS COMMENT and leave no
+callout — don't write "no blocked requests" or similar; the absence is
+the signal. -->
 
 ## Compatibility with this integration
 
@@ -169,5 +173,6 @@ secrets in it. -->
 
 ---
 
-<!-- AGENT: Keep this footer. Delete the comment but keep the text below. -->
+<!-- AGENT: Delete THIS comment only. The italic line below it (starting
+"_Full discovery output:") is the final published footer — keep it as-is. -->
 _Full discovery output: see [`report.raw.md`](report.raw.md). To refresh after a firmware update, rerun the skill — a new timestamped subdirectory is created so old captures remain intact for diffing. This file (`report.md`) is human-curated; copy it forward into the new run's directory and update what changed._
