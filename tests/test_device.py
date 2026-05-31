@@ -16,8 +16,10 @@ from custom_components.geekmagic.device import (
     DeviceSettingsBackup,
     DeviceState,
     GeekMagicDevice,
+    RenderedDashboardRequest,
     SpaceInfo,
 )
+from custom_components.geekmagic.live_transaction import restore_settings
 
 
 @pytest.fixture
@@ -233,7 +235,7 @@ class TestGeekMagicDevice:
         from custom_components.geekmagic.const import MODEL_PRO
 
         device = GeekMagicDevice("192.168.1.100", session=mock_session, model=MODEL_PRO)
-        with patch("custom_components.geekmagic.device.asyncio.sleep", new_callable=AsyncMock):
+        with patch("custom_components.geekmagic.profiles.asyncio.sleep", new_callable=AsyncMock):
             await device.set_image("dashboard.jpg", enter_picture=True)
 
         calls = mock_session.get.call_args_list
@@ -252,18 +254,22 @@ class TestGeekMagicDevice:
         from custom_components.geekmagic.const import MODEL_PRO
 
         device = GeekMagicDevice("192.168.1.100", model=MODEL_PRO)
-        device.get_pro_image_files = AsyncMock(
+        get_image_files = AsyncMock(
             return_value=[
                 DeviceFile("boot.gif", "/image/boot.gif", 294),
                 DeviceFile("dashboard.jpg", "/image/dashboard.jpg", 10),
                 DeviceFile("old.jpg", "/image/old.jpg", 20),
             ]
         )
-        device.delete_file = AsyncMock()
+        delete_file = AsyncMock()
 
-        await device.keep_only_pro_image("dashboard.jpg")
+        with (
+            patch.object(device.profile, "get_image_files", get_image_files),
+            patch.object(device.profile, "delete_file", delete_file),
+        ):
+            await device.keep_only_pro_image("dashboard.jpg")
 
-        device.delete_file.assert_has_awaits(
+        delete_file.assert_has_awaits(
             [
                 call("/image/boot.gif"),
                 call("/image/old.jpg"),
@@ -276,15 +282,53 @@ class TestGeekMagicDevice:
         from custom_components.geekmagic.const import MODEL_PRO
 
         device = GeekMagicDevice("192.168.1.100", model=MODEL_PRO)
-        device.upload = AsyncMock()
-        device.keep_only_pro_image = AsyncMock()
-        device.set_image = AsyncMock()
+        upload = AsyncMock()
+        keep_only_image = AsyncMock()
+        set_image = AsyncMock()
 
-        await device.upload_and_display(b"jpeg", "dashboard.jpg", manage_album=True)
+        with (
+            patch.object(device.profile, "upload", upload),
+            patch.object(device.profile, "keep_only_image", keep_only_image),
+            patch.object(device.profile, "set_image", set_image),
+        ):
+            await device.upload_and_display(b"jpeg", "dashboard.jpg", manage_album=True)
 
-        device.upload.assert_awaited_once_with(b"jpeg", "dashboard.jpg")
-        device.keep_only_pro_image.assert_awaited_once_with("dashboard.jpg")
-        device.set_image.assert_awaited_once_with("dashboard.jpg", enter_picture=False)
+        upload.assert_awaited_once_with(b"jpeg", "dashboard.jpg")
+        keep_only_image.assert_awaited_once_with("dashboard.jpg")
+        set_image.assert_awaited_once_with(
+            "dashboard.jpg",
+            try_menu_navigation=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_display_rendered_dashboard_request_pro_respects_menu_flag(self):
+        """Test rendered dashboard requests keep Pro menu navigation explicit."""
+        from custom_components.geekmagic.const import MODEL_PRO
+
+        device = GeekMagicDevice("192.168.1.100", model=MODEL_PRO)
+        upload = AsyncMock()
+        keep_only_image = AsyncMock()
+        set_image = AsyncMock()
+
+        with (
+            patch.object(device.profile, "upload", upload),
+            patch.object(device.profile, "keep_only_image", keep_only_image),
+            patch.object(device.profile, "set_image", set_image),
+        ):
+            await device.display_rendered_dashboard(
+                RenderedDashboardRequest(
+                    image_data=b"jpeg",
+                    filename="dashboard.jpg",
+                    allow_destructive_album_management=True,
+                    try_menu_navigation=True,
+                )
+            )
+
+        keep_only_image.assert_awaited_once_with("dashboard.jpg")
+        set_image.assert_awaited_once_with(
+            "dashboard.jpg",
+            try_menu_navigation=True,
+        )
 
     @pytest.mark.asyncio
     async def test_get_album_settings_pro_uses_sys_path(self, mock_session, mock_response):
@@ -315,7 +359,7 @@ class TestGeekMagicDevice:
             album=None,
         )
 
-        await device.restore_settings(backup)
+        await restore_settings(device, backup)
 
         calls = [call.args[0] for call in mock_session.get.call_args_list]
         assert calls == [
@@ -336,7 +380,7 @@ class TestGeekMagicDevice:
             album=AlbumSettings(interval=5, gif_loop=2, autoplay=0),
         )
 
-        await device.restore_settings(backup)
+        await restore_settings(device, backup)
 
         calls = [call.args[0] for call in mock_session.get.call_args_list]
         assert calls == [
@@ -584,20 +628,25 @@ class TestDeviceModelDetection:
         from custom_components.geekmagic.const import MODEL_PRO
 
         # Create mock response for Pro path
+        not_found = aiohttp.ClientResponseError(
+            request_info=MagicMock(),
+            history=(),
+            status=404,
+            message="Not Found",
+        )
         mock_response = MagicMock()
-        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(return_value={"theme": "4"})
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.get = MagicMock(side_effect=[not_found, mock_response])
 
         device = GeekMagicDevice("192.168.1.100", session=mock_session)
         result = await device.detect_model()
 
         assert result == MODEL_PRO
         assert device.model == MODEL_PRO
-        # Should have tried Pro path first
-        mock_session.get.assert_called()
-        call_url = mock_session.get.call_args[0][0]
+        call_url = mock_session.get.call_args_list[-1][0][0]
         assert "/.sys/app.json" in call_url
 
     @pytest.mark.asyncio
@@ -606,7 +655,7 @@ class TestDeviceModelDetection:
         from custom_components.geekmagic.const import MODEL_PRO
 
         mock_response = MagicMock()
-        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
         mock_response.json = AsyncMock(
             return_value={"m": "GeekMagic SmallTV-PRO", "v": "V3.3.76EN"}
         )
@@ -630,24 +679,26 @@ class TestDeviceModelDetection:
         from custom_components.geekmagic.const import MODEL_ULTRA
 
         # /v.json and Pro path fail, Ultra path succeeds
-        mock_response_v_fail = MagicMock()
-        mock_response_v_fail.status = 404
-        mock_response_v_fail.__aenter__ = AsyncMock(return_value=mock_response_v_fail)
-        mock_response_v_fail.__aexit__ = AsyncMock()
-
-        mock_response_pro_fail = MagicMock()
-        mock_response_pro_fail.status = 404
-        mock_response_pro_fail.__aenter__ = AsyncMock(return_value=mock_response_pro_fail)
-        mock_response_pro_fail.__aexit__ = AsyncMock()
+        v_not_found = aiohttp.ClientResponseError(
+            request_info=MagicMock(),
+            history=(),
+            status=404,
+            message="Not Found",
+        )
+        pro_not_found = aiohttp.ClientResponseError(
+            request_info=MagicMock(),
+            history=(),
+            status=404,
+            message="Not Found",
+        )
 
         mock_response_ok = MagicMock()
-        mock_response_ok.status = 200
+        mock_response_ok.raise_for_status = MagicMock()
+        mock_response_ok.json = AsyncMock(return_value={"theme": "3"})
         mock_response_ok.__aenter__ = AsyncMock(return_value=mock_response_ok)
         mock_response_ok.__aexit__ = AsyncMock()
 
-        mock_session.get = MagicMock(
-            side_effect=[mock_response_v_fail, mock_response_pro_fail, mock_response_ok]
-        )
+        mock_session.get = MagicMock(side_effect=[v_not_found, pro_not_found, mock_response_ok])
 
         device = GeekMagicDevice("192.168.1.100", session=mock_session)
         result = await device.detect_model()

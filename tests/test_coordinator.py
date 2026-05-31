@@ -20,14 +20,14 @@ from custom_components.geekmagic.const import (
     MODEL_PRO,
 )
 from custom_components.geekmagic.coordinator import GeekMagicCoordinator
-from custom_components.geekmagic.device import ConnectionResult
+from custom_components.geekmagic.device import ConnectionResult, RenderedDashboardRequest
 
 
 @pytest.fixture
 def coordinator_device():
     """Create mock GeekMagic device for coordinator tests."""
     device = MagicMock()
-    device.upload_and_display = AsyncMock()
+    device.display_rendered_dashboard = AsyncMock()
     device.set_brightness = AsyncMock()
     return device
 
@@ -651,7 +651,7 @@ class TestCoordinatorBackoff:
         device = MagicMock()
         device.host = "192.168.1.100"
         device.model = "unknown"
-        device.upload_and_display = AsyncMock()
+        device.display_rendered_dashboard = AsyncMock()
         device.set_brightness = AsyncMock()
         device.get_brightness = AsyncMock(return_value=50)
         device.get_state = AsyncMock(return_value=None)
@@ -869,7 +869,7 @@ class TestCoordinatorBackoff:
         assert "Device offline" in str(exc_info.value)
 
         # Verify expensive operations were NOT called
-        backoff_device.upload_and_display.assert_not_called()
+        backoff_device.display_rendered_dashboard.assert_not_called()
 
         # Verify connectivity check WAS called
         backoff_device.test_connection.assert_called_once()
@@ -917,11 +917,13 @@ class TestCoordinatorBackoff:
             result = await coordinator._async_update_data()
 
         assert result["success"] is True
-        backoff_device.upload_and_display.assert_awaited_once_with(
-            b"jpeg",
-            "dashboard.jpg",
-            manage_album=True,
-            enter_picture=False,
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
+        request = backoff_device.display_rendered_dashboard.await_args.args[0]
+        assert request == RenderedDashboardRequest(
+            image_data=b"jpeg",
+            filename="dashboard.jpg",
+            allow_destructive_album_management=True,
+            try_menu_navigation=False,
         )
 
     @pytest.mark.asyncio
@@ -938,8 +940,11 @@ class TestCoordinatorBackoff:
             await coordinator._async_update_data()
             await coordinator._async_update_data()
 
-        assert backoff_device.upload_and_display.await_args_list[0].kwargs["enter_picture"] is False
-        assert backoff_device.upload_and_display.await_args_list[1].kwargs["enter_picture"] is False
+        requests = [
+            call.args[0] for call in backoff_device.display_rendered_dashboard.await_args_list
+        ]
+        assert requests[0].try_menu_navigation is False
+        assert requests[1].try_menu_navigation is False
 
     @pytest.mark.asyncio
     async def test_first_failure_marks_offline(self, hass, backoff_device, simple_options):
@@ -949,7 +954,9 @@ class TestCoordinatorBackoff:
         coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
 
         # Mock upload to fail
-        backoff_device.upload_and_display = AsyncMock(side_effect=Exception("Connection refused"))
+        backoff_device.display_rendered_dashboard = AsyncMock(
+            side_effect=Exception("Connection refused")
+        )
 
         # Mock the rendering to succeed but upload fails
         with (
@@ -995,7 +1002,7 @@ class TestCoordinatorBackoff:
         assert coordinator._device_offline is True
 
         # Verify expensive operations were NOT called
-        backoff_device.upload_and_display.assert_not_called()
+        backoff_device.display_rendered_dashboard.assert_not_called()
 
 
 class TestCoordinatorPause:
@@ -1012,7 +1019,7 @@ class TestCoordinatorPause:
         device = MagicMock()
         device.host = "192.168.1.100"
         device.model = "unknown"
-        device.upload_and_display = AsyncMock()
+        device.display_rendered_dashboard = AsyncMock()
         device.set_brightness = AsyncMock()
         device.get_brightness = AsyncMock(return_value=75)
         device.get_state = AsyncMock(return_value=None)
@@ -1049,7 +1056,7 @@ class TestCoordinatorPause:
         result = await coordinator._async_update_data()
 
         assert result == {"success": True, "paused": True}
-        pause_device.upload_and_display.assert_not_called()
+        pause_device.display_rendered_dashboard.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_active_false_dims_screen_and_pauses(

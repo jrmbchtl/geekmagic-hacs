@@ -17,6 +17,8 @@ from custom_components.geekmagic.config_flow import (
 from custom_components.geekmagic.const import (
     CONF_LAYOUT,
     CONF_MANAGE_PRO_ALBUM,
+    CONF_MODEL_NAME,
+    CONF_PROFILE_ID,
     CONF_REFRESH_INTERVAL,
     CONF_SCREEN_CYCLE_INTERVAL,
     CONF_SCREENS,
@@ -25,6 +27,7 @@ from custom_components.geekmagic.const import (
     DEFAULT_SCREEN_CYCLE_INTERVAL,
     DOMAIN,
     LAYOUT_GRID_2X2,
+    MODEL_PRO,
 )
 
 # Base URL for mocked device
@@ -126,6 +129,8 @@ class TestConfigFlowUser:
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Test Display"
         assert result["data"]["host"] == DEVICE_HOST
+        assert result["data"][CONF_PROFILE_ID] == "ultra"
+        assert result["data"][CONF_MODEL_NAME] == "SmallTV Ultra"
 
         # Check default options were created
         assert CONF_SCREENS in result["options"]
@@ -184,6 +189,8 @@ class TestConfigFlowUser:
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Pro Display"
+        assert result["data"][CONF_PROFILE_ID] == MODEL_PRO
+        assert result["data"][CONF_MODEL_NAME] == "GeekMagic SmallTV-PRO"
         assert result["options"][CONF_MANAGE_PRO_ALBUM] is True
 
     async def test_user_flow_creates_full_integration(self, hass: HomeAssistant, aioclient_mock):
@@ -218,7 +225,11 @@ class TestOptionsFlowInit:
         entry = MockConfigEntry(
             domain=DOMAIN,
             title="Pro Display",
-            data={"host": DEVICE_HOST, "name": "Pro Display"},
+            data={
+                "host": DEVICE_HOST,
+                "name": "Pro Display",
+                CONF_PROFILE_ID: MODEL_PRO,
+            },
             options={CONF_REFRESH_INTERVAL: DEFAULT_REFRESH_INTERVAL},
         )
         entry.add_to_hass(hass)

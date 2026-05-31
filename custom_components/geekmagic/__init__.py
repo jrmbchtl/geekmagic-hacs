@@ -12,7 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
+from .const import CONF_FIRMWARE_VERSION, CONF_MODEL_NAME, CONF_PROFILE_ID, DOMAIN
 from .coordinator import GeekMagicCoordinator
 from .device import GeekMagicDevice
 from .panel import async_register_panel
@@ -122,8 +122,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.debug("Successfully connected to GeekMagic device at %s", host)
 
-    # Detect device model (Pro vs Ultra)
+    # Detect firmware profile and persist it for offline options/UI flows.
     await device.detect_model()
+    detected_data = {
+        CONF_PROFILE_ID: device.profile_id,
+        CONF_MODEL_NAME: device.model_name,
+        CONF_FIRMWARE_VERSION: device.firmware_version,
+    }
+    if any(entry.data.get(key) != value for key, value in detected_data.items()):
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, **detected_data},
+        )
 
     # Create coordinator
     coordinator = GeekMagicCoordinator(

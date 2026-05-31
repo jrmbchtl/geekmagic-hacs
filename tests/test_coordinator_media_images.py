@@ -37,7 +37,7 @@ COORDINATOR_LOGGER = "custom_components.geekmagic.coordinator"
 def device():
     """Mock GeekMagic device — coordinator only uses it for upload/brightness."""
     d = MagicMock()
-    d.upload_and_display = AsyncMock()
+    d.display_rendered_dashboard = AsyncMock()
     d.set_brightness = AsyncMock()
     return d
 

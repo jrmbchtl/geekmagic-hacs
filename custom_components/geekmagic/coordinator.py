@@ -56,7 +56,7 @@ from .const import (
     MAX_BACKOFF_MULTIPLIER,
     THEME_WATCHOS,
 )
-from .device import DeviceState, GeekMagicDevice, SpaceInfo
+from .device import DeviceState, GeekMagicDevice, RenderedDashboardRequest, SpaceInfo
 from .layouts.corner_hero import HeroCornerBL, HeroCornerBR, HeroCornerTL, HeroCornerTR
 from .layouts.fullscreen import FullscreenLayout
 from .layouts.grid import Grid2x2, Grid2x3, Grid3x2, Grid3x3
@@ -1107,11 +1107,13 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             )
 
             manage_album = bool(self.options.get(CONF_MANAGE_PRO_ALBUM, False))
-            await self.device.upload_and_display(
-                jpeg_data,
-                "dashboard.jpg",
-                manage_album=manage_album,
-                enter_picture=False,
+            await self.device.display_rendered_dashboard(
+                RenderedDashboardRequest(
+                    image_data=jpeg_data,
+                    filename="dashboard.jpg",
+                    allow_destructive_album_management=manage_album,
+                    try_menu_navigation=False,
+                )
             )
 
             # Track success status
@@ -1262,8 +1264,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
     @property
     def device_version(self) -> str | None:
         """Get device firmware version."""
-        # Could be fetched from device if supported
-        return None
+        return self.device.firmware_version
 
     @property
     def last_update_success(self) -> bool:

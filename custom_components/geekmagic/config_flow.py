@@ -14,9 +14,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_DISPLAY_ROTATION,
+    CONF_FIRMWARE_VERSION,
     CONF_JPEG_QUALITY,
     CONF_LAYOUT,
     CONF_MANAGE_PRO_ALBUM,
+    CONF_MODEL_NAME,
+    CONF_PROFILE_ID,
     CONF_REFRESH_INTERVAL,
     CONF_SCREEN_CYCLE_INTERVAL,
     CONF_SCREEN_THEME,
@@ -75,14 +78,15 @@ class GeekMagicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if result.success:
                 _LOGGER.info("Config flow: successfully connected to %s", host)
                 await device.detect_model()
+                entry_data = self._entry_data_with_profile(user_input, device)
 
                 # Pro Picture mode is a slideshow. For deterministic HA rendering,
                 # the integration must own the image album and keep only its
                 # dashboard file on the device. The user still needs to select
                 # the Picture app manually because the Pro menu state is not
                 # exposed reliably enough for automatic button navigation.
-                if device.model == MODEL_PRO:
-                    self._pending_entry_data = user_input
+                if device.capabilities.requires_managed_album:
+                    self._pending_entry_data = entry_data
                     self._pending_entry_title = user_input.get(
                         CONF_NAME, f"GeekMagic ({device.host})"
                     )
@@ -92,7 +96,7 @@ class GeekMagicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Create entry with default options
                 return self.async_create_entry(
                     title=user_input.get(CONF_NAME, f"GeekMagic ({device.host})"),
-                    data=user_input,
+                    data=entry_data,
                     options=self._get_default_options(),
                 )
             _LOGGER.warning("Config flow: failed to connect to %s: %s", host, result.message)
@@ -152,6 +156,18 @@ class GeekMagicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
 
     @staticmethod
+    def _entry_data_with_profile(
+        user_input: dict[str, Any],
+        device: GeekMagicDevice,
+    ) -> dict[str, Any]:
+        """Persist detected profile metadata for offline options/UI flows."""
+        data = dict(user_input)
+        data[CONF_PROFILE_ID] = device.profile_id
+        data[CONF_MODEL_NAME] = device.model_name
+        data[CONF_FIRMWARE_VERSION] = device.firmware_version
+        return data
+
+    @staticmethod
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
@@ -174,9 +190,9 @@ class GeekMagicOptionsFlow(config_entries.OptionsFlow):
             action = user_input.get("action")
             if action == "reset_defaults":
                 return await self.async_step_reset_defaults()
-            if action == "enable_pro_managed_album":
+            if action == "enable_pro_managed_album" and self._supports_managed_album_option():
                 return await self.async_step_pro_managed_album()
-            if action == "disable_pro_managed_album":
+            if action == "disable_pro_managed_album" and self._supports_managed_album_option():
                 options = dict(self.config_entry.options)
                 options[CONF_MANAGE_PRO_ALBUM] = False
                 return self.async_create_entry(title="", data=options)
@@ -184,10 +200,11 @@ class GeekMagicOptionsFlow(config_entries.OptionsFlow):
         actions = {
             "reset_defaults": "Reset to Default Configuration",
         }
-        if self.config_entry.options.get(CONF_MANAGE_PRO_ALBUM):
-            actions["disable_pro_managed_album"] = "Stop Managing Pro Picture Album"
-        else:
-            actions["enable_pro_managed_album"] = "Manage Pro Picture Album"
+        if self._supports_managed_album_option():
+            if self.config_entry.options.get(CONF_MANAGE_PRO_ALBUM):
+                actions["disable_pro_managed_album"] = "Stop Managing Pro Picture Album"
+            else:
+                actions["enable_pro_managed_album"] = "Manage Pro Picture Album"
 
         return self.async_show_form(
             step_id="init",
@@ -219,6 +236,13 @@ class GeekMagicOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             errors=errors,
+        )
+
+    def _supports_managed_album_option(self) -> bool:
+        """Return whether this entry should expose Pro album controls offline."""
+        return bool(
+            self.config_entry.data.get(CONF_PROFILE_ID) == MODEL_PRO
+            or self.config_entry.options.get(CONF_MANAGE_PRO_ALBUM)
         )
 
     async def async_step_reset_defaults(

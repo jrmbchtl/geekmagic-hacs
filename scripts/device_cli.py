@@ -19,15 +19,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from custom_components.geekmagic.const import MODEL_PRO, MODEL_SD_PRO, MODEL_ULTRA
-from custom_components.geekmagic.device import DeviceSettingsBackup, GeekMagicDevice
+from custom_components.geekmagic.const import MODEL_PRO, MODEL_SD_PRO
+from custom_components.geekmagic.device import GeekMagicDevice
+from custom_components.geekmagic.live_transaction import (
+    backup_and_clear_album,
+    backup_settings,
+    cleanup_uploaded_sdpro_photo,
+    restore_settings,
+)
+from custom_components.geekmagic.models import DeviceSettingsBackup, RenderedDashboardRequest
 from custom_components.geekmagic.renderer import Renderer
 from scripts.debug_render import DASHBOARDS
 
 DeviceFactory = Callable[[str], GeekMagicDevice]
 SleepFunc = Callable[[float], Awaitable[None]]
 
-SUPPORTED_RENDER_MODELS = {MODEL_PRO, MODEL_SD_PRO, MODEL_ULTRA}
 DEFAULT_HOLD_SECONDS = 15.0
 
 
@@ -70,6 +76,11 @@ def create_parser() -> argparse.ArgumentParser:
             "Makes Pro display tests deterministic."
         ),
     )
+    render_test.add_argument(
+        "--try-enter-picture",
+        action="store_true",
+        help="Try Pro Enter/Right/Enter button navigation after upload.",
+    )
 
     upload_file = subparsers.add_parser("upload-file", help="Upload and display an image file")
     upload_file.add_argument("host", help="Device IP, hostname, or URL")
@@ -93,6 +104,11 @@ def create_parser() -> argparse.ArgumentParser:
             "Makes Pro display tests deterministic."
         ),
     )
+    upload_file.add_argument(
+        "--try-enter-picture",
+        action="store_true",
+        help="Try Pro Enter/Right/Enter button navigation after upload.",
+    )
 
     brightness = subparsers.add_parser("brightness", help="Get or set display brightness")
     brightness.add_argument("host", help="Device IP, hostname, or URL")
@@ -106,9 +122,10 @@ def create_parser() -> argparse.ArgumentParser:
 
 def _identity_text(device: GeekMagicDevice) -> str:
     """Return a human-readable device identity."""
-    identity = device.model_name or device.model
-    if device.firmware_version:
-        return f"{identity} ({device.firmware_version})"
+    capabilities = device.capabilities
+    identity = capabilities.display_name or device.profile_id
+    if capabilities.firmware_version:
+        return f"{identity} ({capabilities.firmware_version})"
     return identity
 
 
@@ -177,23 +194,27 @@ async def _run_probe(device: GeekMagicDevice) -> int:
     supports_rendering = _supports_rendering(device)
     print(f"  rendered dashboard: {supports_rendering}")
     if supports_rendering:
-        print(f"  custom image theme: {device.custom_theme}")
-        print(f"  built-in modes: {', '.join(device.builtin_modes)}")
+        print(f"  display mechanism: {device.capabilities.display_mechanism}")
+        print(f"  custom image theme: {device.capabilities.custom_image_theme}")
+        print(f"  built-in modes: {', '.join(device.capabilities.builtin_modes)}")
     else:
+        print(f"  display mechanism: {device.capabilities.display_mechanism}")
         print("  custom image theme: unavailable")
         print("  built-in modes: unavailable")
+    for warning in device.capabilities.user_warnings:
+        print(f"  warning: {warning}")
     return 0
 
 
 def _supports_rendering(device: GeekMagicDevice) -> bool:
     """Return whether the stock render/upload/display path is supported."""
-    return device.model in SUPPORTED_RENDER_MODELS
+    return device.capabilities.supports_rendered_dashboard
 
 
 async def _backup_settings(device: GeekMagicDevice, step: int) -> DeviceSettingsBackup:
     """Back up settings before mutating a live device."""
     print(f"Step {step}: back up device settings")
-    backup = await device.backup_settings()
+    backup = await backup_settings(device)
     print(f"  backup: {_format_backup(backup)}")
     return backup
 
@@ -214,7 +235,7 @@ async def _restore_settings(
 ) -> None:
     """Restore settings captured before a mutating test."""
     print(f"Step {step}: restore original settings")
-    await device.restore_settings(backup)
+    await restore_settings(device, backup)
     print("  restore: success")
 
 
@@ -227,20 +248,20 @@ async def _maybe_takeover_album(
     """Optionally clear the device album before uploading."""
     if takeover_album:
         print(f"Step {step}: back up and clear image album")
-        if device.model == MODEL_PRO:
-            backup.pro_album_files = await device.backup_pro_album_files()
-            print(f"  backed up: {len(backup.pro_album_files)} album files")
-            await device.clear_pro_album_files()
+        if device.profile_id == MODEL_PRO:
+            count = await backup_and_clear_album(device, backup)
+            print(f"  backed up: {count or 0} album files")
             print("  cleared: all existing device images were removed")
-        elif device.model == MODEL_SD_PRO:
+        elif device.profile_id == MODEL_SD_PRO:
+            await backup_and_clear_album(device, backup)
             print("  SD_PRO: using slideshow toggles instead of deleting photos")
         else:
-            await device.clear_images()
+            await backup_and_clear_album(device, backup)
             print("  cleared: all existing device images were removed")
-    elif device.model == MODEL_PRO:
+    elif device.profile_id == MODEL_PRO:
         print("Note: Pro Picture mode cycles the device album.")
         print("      Use --takeover-album for deterministic display on a Pro.")
-    elif device.model == MODEL_SD_PRO:
+    elif device.profile_id == MODEL_SD_PRO:
         print(
             "Note: SD_PRO test temporarily makes the uploaded photo the only active slideshow item."
         )
@@ -251,6 +272,7 @@ async def _run_render_test(
     dashboard: str,
     filename: str,
     takeover_album: bool,
+    try_enter_picture: bool,
     hold_seconds: float,
     restore: bool,
     sleep: SleepFunc,
@@ -260,7 +282,7 @@ async def _run_render_test(
 
     if not _supports_rendering(device):
         print("Step 2: stop before mutation")
-        print(f"  unsupported: profile '{device.model}' has no stock upload/display path")
+        print(f"  unsupported: profile '{device.profile_id}' has no upload/display path")
         return 2
 
     backup = await _backup_settings(device, 2)
@@ -274,35 +296,31 @@ async def _run_render_test(
         await _maybe_takeover_album(device, backup, takeover_album, 4)
 
         print(f"Step 5: upload and display as {filename}")
-        print(f"  custom image theme: {device.custom_theme}")
-        await device.upload_and_display(
-            image_data,
-            filename,
-            manage_album=takeover_album,
-            enter_picture=True,
+        print(f"  custom image theme: {device.capabilities.custom_image_theme}")
+        await device.display_rendered_dashboard(
+            RenderedDashboardRequest(
+                image_data=image_data,
+                filename=filename,
+                allow_destructive_album_management=takeover_album,
+                try_menu_navigation=try_enter_picture,
+            )
         )
         print("  success: device should now show the rendered dashboard")
-        if device.model == MODEL_PRO:
+        if device.profile_id == MODEL_PRO:
             print("  note: if it is not visible, manually select the Picture app on the device")
 
         await _hold_for_viewing(hold_seconds, sleep, 6)
     finally:
         if restore:
             await _restore_settings(device, backup, 7)
-            if device.model == MODEL_SD_PRO:
-                names = (
-                    {photo.name for photo in backup.sdpro_photos.files}
-                    if backup.sdpro_photos is not None
-                    else set()
-                )
-                if filename not in names:
-                    print("Step 8: remove uploaded SD_PRO test photo")
-                    try:
-                        await device.delete_sdpro_photo(filename)
-                    except Exception as err:
-                        print(f"  cleanup warning: {err}")
-                    else:
-                        print("  cleanup: success")
+            if device.profile_id == MODEL_SD_PRO:
+                print("Step 8: remove uploaded SD_PRO test photo")
+                try:
+                    removed = await cleanup_uploaded_sdpro_photo(device, backup, filename)
+                except Exception as err:
+                    print(f"  cleanup warning: {err}")
+                else:
+                    print("  cleanup: success" if removed else "  cleanup: not needed")
         else:
             print("Step 7: restore skipped (--no-restore)")
     return 0
@@ -312,6 +330,7 @@ async def _run_upload_file(
     device: GeekMagicDevice,
     path: Path,
     takeover_album: bool,
+    try_enter_picture: bool,
     hold_seconds: float,
     restore: bool,
     sleep: SleepFunc,
@@ -321,7 +340,7 @@ async def _run_upload_file(
 
     if not _supports_rendering(device):
         print("Step 2: stop before mutation")
-        print(f"  unsupported: profile '{device.model}' has no stock upload/display path")
+        print(f"  unsupported: profile '{device.profile_id}' has no upload/display path")
         return 2
 
     backup = await _backup_settings(device, 2)
@@ -333,35 +352,31 @@ async def _run_upload_file(
         await _maybe_takeover_album(device, backup, takeover_album, 4)
 
         print(f"Step 5: upload and display as {path.name}")
-        print(f"  custom image theme: {device.custom_theme}")
-        await device.upload_and_display(
-            image_data,
-            path.name,
-            manage_album=takeover_album,
-            enter_picture=True,
+        print(f"  custom image theme: {device.capabilities.custom_image_theme}")
+        await device.display_rendered_dashboard(
+            RenderedDashboardRequest(
+                image_data=image_data,
+                filename=path.name,
+                allow_destructive_album_management=takeover_album,
+                try_menu_navigation=try_enter_picture,
+            )
         )
         print("  success: device should now show the uploaded image")
-        if device.model == MODEL_PRO:
+        if device.profile_id == MODEL_PRO:
             print("  note: if it is not visible, manually select the Picture app on the device")
 
         await _hold_for_viewing(hold_seconds, sleep, 6)
     finally:
         if restore:
             await _restore_settings(device, backup, 7)
-            if device.model == MODEL_SD_PRO:
-                names = (
-                    {photo.name for photo in backup.sdpro_photos.files}
-                    if backup.sdpro_photos is not None
-                    else set()
-                )
-                if path.name not in names:
-                    print("Step 8: remove uploaded SD_PRO test photo")
-                    try:
-                        await device.delete_sdpro_photo(path.name)
-                    except Exception as err:
-                        print(f"  cleanup warning: {err}")
-                    else:
-                        print("  cleanup: success")
+            if device.profile_id == MODEL_SD_PRO:
+                print("Step 8: remove uploaded SD_PRO test photo")
+                try:
+                    removed = await cleanup_uploaded_sdpro_photo(device, backup, path.name)
+                except Exception as err:
+                    print(f"  cleanup warning: {err}")
+                else:
+                    print("  cleanup: success" if removed else "  cleanup: not needed")
         else:
             print("Step 7: restore skipped (--no-restore)")
     return 0
@@ -399,6 +414,7 @@ async def run(
                 args.dashboard,
                 args.filename,
                 args.takeover_album,
+                args.try_enter_picture,
                 args.hold_seconds,
                 not args.no_restore,
                 sleep,
@@ -408,6 +424,7 @@ async def run(
                 device,
                 args.path,
                 args.takeover_album,
+                args.try_enter_picture,
                 args.hold_seconds,
                 not args.no_restore,
                 sleep,

@@ -43,16 +43,27 @@ from custom_components.geekmagic.const import (
     COLOR_TEAL,
     COLOR_WHITE,
     COLOR_YELLOW,
-    MODEL_PRO,
 )
-from custom_components.geekmagic.device import GeekMagicDevice
+from custom_components.geekmagic.device import GeekMagicDevice, RenderedDashboardRequest
 from custom_components.geekmagic.renderer import Renderer
 
 
 def _print_pro_picture_note(device: GeekMagicDevice) -> None:
     """Tell Pro users how to make the uploaded image visible."""
-    if device.model == MODEL_PRO:
+    if device.capabilities.requires_managed_album:
         print("For Pro devices, manually select the Picture app if the image is not visible.")
+
+
+async def _display_debug_image(device: GeekMagicDevice, jpeg_data: bytes) -> None:
+    """Upload the debug render through the same profile-backed display flow as HA."""
+    await device.display_rendered_dashboard(
+        RenderedDashboardRequest(
+            image_data=jpeg_data,
+            filename="debug.jpg",
+            allow_destructive_album_management=False,
+            try_menu_navigation=False,
+        )
+    )
 
 
 def render_system_monitor(renderer: Renderer) -> bytes:
@@ -530,7 +541,7 @@ async def main() -> None:
             print(f"Rendering {name}...")
             jpeg_data = render_func(renderer)
             print(f"Uploading ({len(jpeg_data)} bytes)...")
-            await device.upload_and_display(jpeg_data, "debug.jpg")
+            await _display_debug_image(device, jpeg_data)
             _print_pro_picture_note(device)
             print("Done!")
 
@@ -546,7 +557,7 @@ async def main() -> None:
 
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Rendering {name}...")
                 jpeg_data = render_func(renderer)
-                await device.upload_and_display(jpeg_data, "debug.jpg")
+                await _display_debug_image(device, jpeg_data)
                 print(f"  Uploaded {len(jpeg_data)} bytes")
                 _print_pro_picture_note(device)
 
@@ -558,7 +569,7 @@ async def main() -> None:
             print("Rendering System Monitor...")
             jpeg_data = render_system_monitor(renderer)
             print(f"Uploading ({len(jpeg_data)} bytes)...")
-            await device.upload_and_display(jpeg_data, "debug.jpg")
+            await _display_debug_image(device, jpeg_data)
             _print_pro_picture_note(device)
             print("Done!")
 
