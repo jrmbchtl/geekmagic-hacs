@@ -44,8 +44,26 @@ from custom_components.geekmagic.const import (
     COLOR_WHITE,
     COLOR_YELLOW,
 )
-from custom_components.geekmagic.device import GeekMagicDevice
+from custom_components.geekmagic.device import GeekMagicDevice, RenderedDashboardRequest
 from custom_components.geekmagic.renderer import Renderer
+
+
+def _print_pro_picture_note(device: GeekMagicDevice) -> None:
+    """Tell Pro users how to make the uploaded image visible."""
+    if device.capabilities.requires_managed_album:
+        print("For Pro devices, manually select the Picture app if the image is not visible.")
+
+
+async def _display_debug_image(device: GeekMagicDevice, jpeg_data: bytes) -> None:
+    """Upload the debug render through the same profile-backed display flow as HA."""
+    await device.display_rendered_dashboard(
+        RenderedDashboardRequest(
+            image_data=jpeg_data,
+            filename="debug.jpg",
+            allow_destructive_album_management=False,
+            try_menu_navigation=False,
+        )
+    )
 
 
 def render_system_monitor(renderer: Renderer) -> bytes:
@@ -499,8 +517,23 @@ async def main() -> None:
             print(f"Error: Could not connect to device at {args.device_ip}")
             return
 
-        state = await device.get_state()
-        print(f"Connected! Current theme: {state.theme}, brightness: {state.brightness}")
+        await device.detect_model()
+        identity = device.model_name or device.model
+        if device.firmware_version:
+            identity = f"{identity} ({device.firmware_version})"
+        print(f"Connected! Detected: {identity}")
+
+        try:
+            brightness = await device.get_brightness()
+            print(f"Current brightness: {brightness}")
+        except Exception as err:
+            print(f"Brightness unavailable: {err}")
+
+        try:
+            state = await device.get_state()
+            print(f"Current theme: {state.theme}, current image: {state.current_image}")
+        except Exception as err:
+            print(f"State unavailable: {err}")
 
         if args.dashboard:
             # Single dashboard
@@ -508,7 +541,8 @@ async def main() -> None:
             print(f"Rendering {name}...")
             jpeg_data = render_func(renderer)
             print(f"Uploading ({len(jpeg_data)} bytes)...")
-            await device.upload_and_display(jpeg_data, "debug.jpg")
+            await _display_debug_image(device, jpeg_data)
+            _print_pro_picture_note(device)
             print("Done!")
 
         elif args.cycle:
@@ -523,8 +557,9 @@ async def main() -> None:
 
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Rendering {name}...")
                 jpeg_data = render_func(renderer)
-                await device.upload_and_display(jpeg_data, "debug.jpg")
+                await _display_debug_image(device, jpeg_data)
                 print(f"  Uploaded {len(jpeg_data)} bytes")
+                _print_pro_picture_note(device)
 
                 idx += 1
                 await asyncio.sleep(args.interval)
@@ -534,7 +569,8 @@ async def main() -> None:
             print("Rendering System Monitor...")
             jpeg_data = render_system_monitor(renderer)
             print(f"Uploading ({len(jpeg_data)} bytes)...")
-            await device.upload_and_display(jpeg_data, "debug.jpg")
+            await _display_debug_image(device, jpeg_data)
+            _print_pro_picture_note(device)
             print("Done!")
 
     except KeyboardInterrupt:

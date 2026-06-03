@@ -8,6 +8,7 @@ import pytest
 from custom_components.geekmagic.const import (
     BACKOFF_LOG_INTERVAL,
     CONF_LAYOUT,
+    CONF_MANAGE_PRO_ALBUM,
     CONF_REFRESH_INTERVAL,
     CONF_SCREEN_CYCLE_INTERVAL,
     CONF_SCREENS,
@@ -16,16 +17,21 @@ from custom_components.geekmagic.const import (
     LAYOUT_GRID_2X2,
     LAYOUT_SPLIT_H,
     MAX_BACKOFF_MULTIPLIER,
+    MODEL_PRO,
 )
-from custom_components.geekmagic.coordinator import GeekMagicCoordinator
-from custom_components.geekmagic.device import ConnectionResult
+from custom_components.geekmagic.coordinator import CONF_ASSIGNED_VIEWS, GeekMagicCoordinator
+from custom_components.geekmagic.device import (
+    ConnectionResult,
+    DeviceState,
+    RenderedDashboardRequest,
+)
 
 
 @pytest.fixture
 def coordinator_device():
     """Create mock GeekMagic device for coordinator tests."""
     device = MagicMock()
-    device.upload_and_display = AsyncMock()
+    device.display_rendered_dashboard = AsyncMock()
     device.set_brightness = AsyncMock()
     return device
 
@@ -649,7 +655,7 @@ class TestCoordinatorBackoff:
         device = MagicMock()
         device.host = "192.168.1.100"
         device.model = "unknown"
-        device.upload_and_display = AsyncMock()
+        device.display_rendered_dashboard = AsyncMock()
         device.set_brightness = AsyncMock()
         device.get_brightness = AsyncMock(return_value=50)
         device.get_state = AsyncMock(return_value=None)
@@ -657,6 +663,8 @@ class TestCoordinatorBackoff:
         device.test_connection = AsyncMock(
             return_value=ConnectionResult(success=True, error="none", message="OK")
         )
+        device.is_builtin_theme = MagicMock(return_value=False)
+        device.set_theme_custom = AsyncMock()
         return device
 
     @pytest.fixture
@@ -867,7 +875,7 @@ class TestCoordinatorBackoff:
         assert "Device offline" in str(exc_info.value)
 
         # Verify expensive operations were NOT called
-        backoff_device.upload_and_display.assert_not_called()
+        backoff_device.display_rendered_dashboard.assert_not_called()
 
         # Verify connectivity check WAS called
         backoff_device.test_connection.assert_called_once()
@@ -900,6 +908,114 @@ class TestCoordinatorBackoff:
         assert result["success"] is True
 
     @pytest.mark.asyncio
+    async def test_managed_pro_album_option_passed_to_device(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test coordinator asks the device to keep only the managed Pro image."""
+        backoff_device.model = MODEL_PRO
+        coordinator = GeekMagicCoordinator(
+            hass,
+            backoff_device,
+            {**simple_options, CONF_MANAGE_PRO_ALBUM: True},
+        )
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["success"] is True
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
+        request = backoff_device.display_rendered_dashboard.await_args.args[0]
+        assert request == RenderedDashboardRequest(
+            image_data=b"jpeg",
+            filename="dashboard.jpg",
+            allow_destructive_album_management=True,
+            try_menu_navigation=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_startup_builtin_state_skips_render_without_custom_request(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test startup still respects a device already showing a built-in theme."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["builtin_mode"] is True
+        assert coordinator.display_mode == "builtin"
+        backoff_device.display_rendered_dashboard.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_custom_selection_renders_even_when_device_reports_builtin_theme(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test selected HA views are not blocked by the device's current theme."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+        coordinator.set_display_mode("custom", 0)
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["success"] is True
+        assert coordinator.display_mode == "custom"
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_assigned_views_switch_from_builtin_to_custom_rendering(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test panel view checkboxes make HA rendering authoritative."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+        coordinator.set_display_mode("builtin", 1)
+
+        coordinator.update_options(
+            {
+                **simple_options,
+                CONF_ASSIGNED_VIEWS: ["view_1"],
+            }
+        )
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["success"] is True
+        assert coordinator.display_mode == "custom"
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pro_picture_entry_is_not_automated(self, hass, backoff_device, simple_options):
+        """Test Pro button navigation is never attempted by HA refreshes."""
+        backoff_device.model = MODEL_PRO
+        coordinator = GeekMagicCoordinator(
+            hass,
+            backoff_device,
+            {**simple_options, CONF_MANAGE_PRO_ALBUM: True},
+        )
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            await coordinator._async_update_data()
+            await coordinator._async_update_data()
+
+        requests = [
+            call.args[0] for call in backoff_device.display_rendered_dashboard.await_args_list
+        ]
+        assert requests[0].try_menu_navigation is False
+        assert requests[1].try_menu_navigation is False
+
+    @pytest.mark.asyncio
     async def test_first_failure_marks_offline(self, hass, backoff_device, simple_options):
         """Test that first update failure marks device offline and applies backoff."""
         from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -907,7 +1023,9 @@ class TestCoordinatorBackoff:
         coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
 
         # Mock upload to fail
-        backoff_device.upload_and_display = AsyncMock(side_effect=Exception("Connection refused"))
+        backoff_device.display_rendered_dashboard = AsyncMock(
+            side_effect=Exception("Connection refused")
+        )
 
         # Mock the rendering to succeed but upload fails
         with (
@@ -953,7 +1071,7 @@ class TestCoordinatorBackoff:
         assert coordinator._device_offline is True
 
         # Verify expensive operations were NOT called
-        backoff_device.upload_and_display.assert_not_called()
+        backoff_device.display_rendered_dashboard.assert_not_called()
 
 
 class TestCoordinatorPause:
@@ -970,7 +1088,7 @@ class TestCoordinatorPause:
         device = MagicMock()
         device.host = "192.168.1.100"
         device.model = "unknown"
-        device.upload_and_display = AsyncMock()
+        device.display_rendered_dashboard = AsyncMock()
         device.set_brightness = AsyncMock()
         device.get_brightness = AsyncMock(return_value=75)
         device.get_state = AsyncMock(return_value=None)
@@ -1007,7 +1125,7 @@ class TestCoordinatorPause:
         result = await coordinator._async_update_data()
 
         assert result == {"success": True, "paused": True}
-        pause_device.upload_and_display.assert_not_called()
+        pause_device.display_rendered_dashboard.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_active_false_dims_screen_and_pauses(

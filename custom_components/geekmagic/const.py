@@ -5,6 +5,7 @@ DOMAIN = "geekmagic"
 # Device models
 MODEL_ULTRA = "ultra"
 MODEL_PRO = "pro"
+MODEL_SD_PRO = "sd_pro"
 MODEL_UNKNOWN = "unknown"
 
 # Display dimensions
@@ -31,6 +32,10 @@ CONF_JPEG_QUALITY = "jpeg_quality"
 CONF_DISPLAY_ROTATION = "display_rotation"
 CONF_LAYOUT = "layout"
 CONF_WIDGETS = "widgets"
+CONF_MANAGE_PRO_ALBUM = "manage_pro_album"
+CONF_PROFILE_ID = "profile_id"
+CONF_MODEL_NAME = "model_name"
+CONF_FIRMWARE_VERSION = "firmware_version"
 
 # Multi-screen config keys
 CONF_SCREENS = "screens"

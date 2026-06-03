@@ -20,7 +20,7 @@ from custom_components.geekmagic.layouts.hero_simple import HeroSimpleLayout
 def coordinator_device():
     """Create mock GeekMagic device."""
     device = MagicMock()
-    device.upload_and_display = AsyncMock()
+    device.display_rendered_dashboard = AsyncMock()
     device.set_brightness = AsyncMock()
     device.get_brightness = AsyncMock(return_value=50)
     device.get_state = AsyncMock(return_value=None)

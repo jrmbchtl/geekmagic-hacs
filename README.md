@@ -8,7 +8,7 @@
 
 A Home Assistant custom integration for GeekMagic displays (SmallTV Pro, Ultra, and similar ESP8266/ESP32-based devices).
 
-> **How it works:** This integration renders dashboard images directly in Home Assistant using Python/Pillow and pushes them to your GeekMagic device over HTTP. No flashing required - works with stock firmware.
+> **How it works:** This integration renders dashboard images directly in Home Assistant using Python/Pillow and pushes them to your GeekMagic device over HTTP. It supports the known stock firmware profiles and the newer SD_PRO-style firmware used by some Ultra units.
 
 ---
 
@@ -416,12 +416,28 @@ data:
 
 ## Device Compatibility
 
-Tested with:
-- GeekMagic SmallTV Ultra (240x240, ESP8266)
+GeekMagic devices with the same case/name can ship with very different firmware.
+The integration detects the firmware/API profile first, then uses the matching
+upload and display flow.
 
-Should work with any GeekMagic device that supports the `/doUpload` HTTP API.
+| Device / firmware profile | Detection | Render support | Notes |
+| --- | --- | --- | --- |
+| SmallTV Ultra stock firmware | `/app.json` or `/v.json` with Ultra model | Full | Uses `/doUpload?dir=/image/`, `/set?theme=3`, and `/set?img=/image/{filename}`. |
+| SmallTV-PRO stock firmware | `/v.json` with `GeekMagic SmallTV-PRO`, or `/.sys/app.json` | Full, with managed album | Uses `/doUpload?dir=/image/` and `/set?theme=4`. Picture mode is an album slideshow, so the integration can manage the album and keep only `dashboard.jpg`. |
+| Ultra / SD_PRO community-style firmware | `/theme/list` and `/photo/list` | Supported through Photo slideshow | This firmware is very different from stock Ultra firmware. It uses `/config`, `/api/set?key=...`, `/photo/upload`, `/photo/toggle`, and `/theme/list`; it does not support direct `/set?img=` image selection. |
 
-**Important:** This integration works with the **stock firmware** that ships with GeekMagic devices. No custom firmware or flashing required - just connect your device to your network and add the integration.
+Other GeekMagic devices may work if they expose one of those API profiles. If a
+device has the same product name but a different web UI or endpoint set, run the
+repo-local probe command from the development section below and attach the output
+to an issue.
+
+**SmallTV-PRO note:** Pro Picture mode is an album slideshow. During Pro setup,
+Home Assistant asks for confirmation to manage that album. When enabled, the
+integration removes other pictures from the Pro album and keeps one managed
+`dashboard.jpg` image updated so the display cannot rotate away from the HA
+dashboard. After setup, manually select the Picture app on the device; the
+integration does not press the Pro menu buttons automatically because the
+firmware does not expose enough menu state to do that reliably.
 
 ### Alternative Firmware
 
@@ -448,6 +464,31 @@ uv run ruff check .                  # Lint
 uv run pre-commit run --all-files    # Run all checks
 uv run python scripts/generate_samples.py  # Generate samples
 ```
+
+### Live Device Testing
+
+You can smoke-test the device client from a repo checkout before installing into Home Assistant:
+
+```bash
+uv run python scripts/device_cli.py probe <DEVICE-IP>
+uv run python scripts/device_cli.py render-test <DEVICE-IP> --dashboard clock
+uv run python scripts/device_cli.py upload-file <DEVICE-IP> path/to/image.jpg
+uv run python scripts/device_cli.py brightness <DEVICE-IP> get
+uv run python scripts/device_cli.py brightness <DEVICE-IP> set 80
+```
+
+`probe` only reads from the device. `render-test`, `upload-file`, and `brightness set` change the display.
+The render/upload smoke tests back up readable device settings first, hold the
+test image on screen for 15 seconds, then restore the original settings. Use
+`--hold-seconds N` to change the viewing window. `--takeover-album` can make Pro
+Picture mode deterministic by backing up the existing album, clearing it for the
+test, and restoring it afterward. If a Pro test image uploads but is not visible,
+manually select the Picture app on the device, or add `--try-enter-picture` to
+let the CLI press the Pro menu buttons during a live smoke test. Home Assistant
+does not press those buttons automatically. If your workstation has multiple
+routes to the device subnet, add `--bind-address LOCAL-IP` to the CLI command to
+force the source interface used for both aiohttp and raw firmware fallback
+requests.
 
 ## License
 
