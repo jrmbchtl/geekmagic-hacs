@@ -4,7 +4,9 @@ Uses aioclient_mock to mock HTTP responses at the boundary, letting the
 real GeekMagicDevice client run inside the config flow.
 """
 
+import json
 import re
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -65,6 +67,24 @@ class TestConfigFlowImports:
         assert hasattr(GeekMagicConfigFlow, "VERSION")
         assert hasattr(GeekMagicConfigFlow, "async_step_user")
         assert hasattr(GeekMagicConfigFlow, "async_get_options_flow")
+
+    def test_pro_album_warning_strings_are_available_for_config_and_options(self):
+        """Test destructive Pro album checkbox has labels in both flows."""
+        strings_path = (
+            Path(__file__).resolve().parents[1] / "custom_components" / "geekmagic" / "strings.json"
+        )
+        strings = json.loads(strings_path.read_text())
+
+        config_step = strings["config"]["step"]["pro_managed_album"]
+        options_step = strings["options"]["step"]["pro_managed_album"]
+
+        for step in (config_step, options_step):
+            assert "delete existing pictures" in step["description"]
+            assert "manually select the Picture app" in step["description"]
+            assert CONF_MANAGE_PRO_ALBUM in step["data"]
+            assert "keep one managed dashboard image" in step["data"][CONF_MANAGE_PRO_ALBUM]
+
+        assert "confirm_required" in strings["options"]["error"]
 
 
 class TestConfigFlowUser:

@@ -405,6 +405,21 @@ class TestDeviceRegistry:
         assert len(main_device) == 1
         assert "Ultra" in (main_device[0].model or "")
 
+    async def test_preview_entity_joins_main_device(self, hass: HomeAssistant, aioclient_mock):
+        """Test the preview image does not create a second physical device."""
+        from homeassistant.helpers import device_registry as dr
+
+        entry = await setup_integration(hass, aioclient_mock, model="ultra")
+
+        dev_reg = dr.async_get(hass)
+        devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        geekmagic_devices = [d for d in devices if d.manufacturer == "GeekMagic"]
+
+        assert len(geekmagic_devices) == 1
+        device = geekmagic_devices[0]
+        assert (DOMAIN, entry.entry_id) in device.identifiers
+        assert (DOMAIN, DEVICE_HOST) not in device.identifiers
+
 
 class TestOptionsUpdate:
     """Test that options updates propagate correctly."""
