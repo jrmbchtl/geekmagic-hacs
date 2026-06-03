@@ -361,6 +361,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         # "custom" = integration renders views, "builtin" = device shows built-in mode
         self._display_mode: str = "custom"
         self._builtin_theme: int = 0  # Device theme when in builtin mode
+        self._custom_display_requested: bool = bool(self.options.get(CONF_ASSIGNED_VIEWS))
 
         # Sleep/wake state — when paused, the render/upload cycle is skipped entirely
         self._paused: bool = False
@@ -653,6 +654,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         if 0 <= screen_index < len(self._layouts):
             self._current_screen = screen_index
             self._last_screen_change = time.time()
+            self._custom_display_requested = True
 
             # If in builtin mode, switch to custom mode so the screen change is rendered
             if self._display_mode == "builtin":
@@ -680,7 +682,16 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         Args:
             options: New options dictionary
         """
+        old_assigned_views = list(self.options.get(CONF_ASSIGNED_VIEWS, []))
         self.options = self._migrate_options(options)
+        new_assigned_views = list(self.options.get(CONF_ASSIGNED_VIEWS, []))
+
+        if new_assigned_views and new_assigned_views != old_assigned_views:
+            _LOGGER.debug("Assigned views changed; switching device to custom render mode")
+            self._display_mode = "custom"
+            self._custom_display_requested = True
+            self._current_screen = min(self._current_screen, len(new_assigned_views) - 1)
+            self._last_screen_change = time.time()
 
         # Update refresh interval
         interval = int(self.options.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL))
@@ -1056,6 +1067,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                     if (
                         self.device.is_builtin_theme(device_theme)
                         and self._display_mode == "custom"
+                        and not self._custom_display_requested
                     ):
                         # Device is in built-in mode but we thought we were in custom
                         # This can happen on startup - sync to device state
@@ -1344,10 +1356,12 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         self._display_mode = mode
         if mode == "builtin":
             self._builtin_theme = value
+            self._custom_display_requested = False
         else:
             # Custom mode - value is view index
             self._current_screen = value
             self._last_screen_change = time.time()
+            self._custom_display_requested = True
 
     async def async_set_brightness(self, brightness: int) -> None:
         """Set display brightness.
@@ -1396,6 +1410,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         if self._display_mode == "builtin":
             _LOGGER.debug("Switching from builtin to custom mode")
             self._display_mode = "custom"
+        self._custom_display_requested = True
 
         # Ensure device is in custom image mode
         await self.device.set_theme_custom()
@@ -1409,6 +1424,9 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         Call this when a global view's content has been updated.
         """
         self._setup_screens()
+        if self.options.get(CONF_ASSIGNED_VIEWS):
+            self._display_mode = "custom"
+            self._custom_display_requested = True
         self._update_preview = True
         await self.async_request_refresh()
 

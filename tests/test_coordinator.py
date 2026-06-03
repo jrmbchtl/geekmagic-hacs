@@ -19,8 +19,12 @@ from custom_components.geekmagic.const import (
     MAX_BACKOFF_MULTIPLIER,
     MODEL_PRO,
 )
-from custom_components.geekmagic.coordinator import GeekMagicCoordinator
-from custom_components.geekmagic.device import ConnectionResult, RenderedDashboardRequest
+from custom_components.geekmagic.coordinator import CONF_ASSIGNED_VIEWS, GeekMagicCoordinator
+from custom_components.geekmagic.device import (
+    ConnectionResult,
+    DeviceState,
+    RenderedDashboardRequest,
+)
 
 
 @pytest.fixture
@@ -659,6 +663,8 @@ class TestCoordinatorBackoff:
         device.test_connection = AsyncMock(
             return_value=ConnectionResult(success=True, error="none", message="OK")
         )
+        device.is_builtin_theme = MagicMock(return_value=False)
+        device.set_theme_custom = AsyncMock()
         return device
 
     @pytest.fixture
@@ -925,6 +931,69 @@ class TestCoordinatorBackoff:
             allow_destructive_album_management=True,
             try_menu_navigation=False,
         )
+
+    @pytest.mark.asyncio
+    async def test_startup_builtin_state_skips_render_without_custom_request(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test startup still respects a device already showing a built-in theme."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["builtin_mode"] is True
+        assert coordinator.display_mode == "builtin"
+        backoff_device.display_rendered_dashboard.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_custom_selection_renders_even_when_device_reports_builtin_theme(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test selected HA views are not blocked by the device's current theme."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+        coordinator.set_display_mode("custom", 0)
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["success"] is True
+        assert coordinator.display_mode == "custom"
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_assigned_views_switch_from_builtin_to_custom_rendering(
+        self, hass, backoff_device, simple_options
+    ):
+        """Test panel view checkboxes make HA rendering authoritative."""
+        backoff_device.get_state = AsyncMock(
+            return_value=DeviceState(theme=1, brightness=50, current_image=None)
+        )
+        backoff_device.is_builtin_theme = MagicMock(return_value=True)
+        coordinator = GeekMagicCoordinator(hass, backoff_device, simple_options)
+        coordinator.set_display_mode("builtin", 1)
+
+        coordinator.update_options(
+            {
+                **simple_options,
+                CONF_ASSIGNED_VIEWS: ["view_1"],
+            }
+        )
+
+        with patch.object(coordinator, "_render_display", return_value=(b"jpeg", b"png")):
+            result = await coordinator._async_update_data()
+
+        assert result["success"] is True
+        assert coordinator.display_mode == "custom"
+        backoff_device.display_rendered_dashboard.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_pro_picture_entry_is_not_automated(self, hass, backoff_device, simple_options):
