@@ -73,52 +73,73 @@ class ChartDisplay(Component):
                 if show_range:
                     min_val = min(self.data)
                     max_val = max(self.data)
-                    # Prefix with "Min"/"Max" so the bottom strip reads as
-                    # data extremes, not as x-axis start/end ticks. Pick the
-                    # largest font (small -> tiny) at which both labels fit
-                    # side by side; if even the tiny labels overflow a narrow
-                    # cell, fall back to bare numbers so the range is never
-                    # dropped entirely.
-                    min_text = f"Min {min_val:.1f}"
-                    max_text = f"Max {max_val:.1f}"
-                    range_font = None
-                    # The labels are anchored to opposite edges, so they only
-                    # touch when their combined width exceeds inner_w; a 2px
-                    # buffer keeps a hair of gap between them.
-                    for size in ("small", "tiny"):
-                        candidate = ctx.get_font(size)
-                        min_w, _ = ctx.get_text_size(min_text, candidate)
-                        max_w, _ = ctx.get_text_size(max_text, candidate)
-                        if min_w + max_w + 2 <= inner_w:
-                            range_font = candidate
-                            break
-                    if range_font is None:
-                        min_text = f"{min_val:.1f}"
-                        max_text = f"{max_val:.1f}"
-                        range_font = ctx.get_font("tiny")
-                        min_w, _ = ctx.get_text_size(min_text, range_font)
-                        max_w, _ = ctx.get_text_size(max_text, range_font)
-
+                    # Mark the extremes with compact arrows (down = low,
+                    # up = high) instead of the words "Min"/"Max". The icons
+                    # read as data extremes — not x-axis start/end ticks —
+                    # while taking far less width than text, so the labels
+                    # survive in narrow cells and usually leave room for the
+                    # period in the middle.
+                    range_font = ctx.get_font("small")
+                    min_text = f"{min_val:.1f}"
+                    max_text = f"{max_val:.1f}"
                     range_y = chart_bottom + int(height * 0.08)
+
+                    val_h = ctx.get_text_size("0", range_font)[1]
+                    icon_size = max(8, int(val_h * 1.4))
+                    gap = max(1, icon_size // 8)
+                    min_val_w, _ = ctx.get_text_size(min_text, range_font)
+                    max_val_w, _ = ctx.get_text_size(max_text, range_font)
+
+                    # If the two icon+value labels would collide (wide values
+                    # in a small cell), shrink the value font — and the icons
+                    # with it — to fit on width so the extremes never overlap.
+                    if (icon_size + gap + min_val_w) + (icon_size + gap + max_val_w) + 4 > inner_w:
+                        longer = min_text if min_val_w >= max_val_w else max_text
+                        budget = max(1, inner_w // 2 - icon_size - gap - 2)
+                        range_font = ctx.fit_text(longer, max_width=budget, max_height=val_h)
+                        val_h = ctx.get_text_size("0", range_font)[1]
+                        icon_size = max(6, int(val_h * 1.4))
+                        gap = max(1, icon_size // 8)
+                        min_val_w, _ = ctx.get_text_size(min_text, range_font)
+                        max_val_w, _ = ctx.get_text_size(max_text, range_font)
+
+                    icon_top = range_y - icon_size // 2
+                    left_w = icon_size + gap + min_val_w
+                    right_w = icon_size + gap + max_val_w
+
+                    # Low marker + value, anchored to the left edge.
+                    ctx.draw_icon(
+                        "mdi:arrow-down",
+                        (x + padding, icon_top),
+                        size=icon_size,
+                        color=THEME_TEXT_SECONDARY,
+                    )
                     ctx.draw_text(
                         min_text,
-                        (x + padding, range_y),
+                        (x + padding + icon_size + gap, range_y),
                         font=range_font,
                         color=THEME_TEXT_SECONDARY,
                         anchor="lm",
                     )
+                    # High marker + value, anchored to the right edge.
+                    ctx.draw_icon(
+                        "mdi:arrow-up",
+                        (x + width - padding - icon_size, icon_top),
+                        size=icon_size,
+                        color=THEME_TEXT_SECONDARY,
+                    )
                     ctx.draw_text(
                         max_text,
-                        (x + width - padding, range_y),
+                        (x + width - padding - icon_size - gap, range_y),
                         font=range_font,
                         color=THEME_TEXT_SECONDARY,
                         anchor="rm",
                     )
-                    # Center the period (e.g. "24h") between Min/Max only
+                    # Center the period (e.g. "24h") between the markers only
                     # when there's clear room — omit it otherwise.
                     if self.period_label:
                         period_w, _ = ctx.get_text_size(self.period_label, range_font)
-                        if min_w + max_w + period_w + 16 <= inner_w:
+                        if left_w + right_w + period_w + 16 <= inner_w:
                             ctx.draw_text(
                                 self.period_label,
                                 (x + width // 2, range_y),

@@ -727,6 +727,29 @@ class TestChartWidget:
         display = ChartDisplay(data=[])
         assert display._is_binary_data() is False
 
+    def test_range_renders_low_high_arrow_icons(self, renderer, canvas, rect):
+        """Range strip marks extremes with low/high arrow icons, not bare ticks."""
+        from custom_components.geekmagic.widgets.chart import ChartDisplay
+
+        _, draw = canvas
+        ctx = RenderContext(draw, rect, renderer)
+        icon_calls: list[str] = []
+        original = ctx.draw_icon
+
+        def _spy(name, *args, **kwargs):
+            icon_calls.append(name)
+            return original(name, *args, **kwargs)
+
+        ctx.draw_icon = _spy  # type: ignore[method-assign]
+        display = ChartDisplay(
+            data=[20.0, 21.0, 22.5, 24.0],
+            show_range=True,
+            period_label="24h",
+        )
+        display.render(ctx, 0, 0, ctx.width, ctx.height)
+        assert "mdi:arrow-down" in icon_calls
+        assert "mdi:arrow-up" in icon_calls
+
     def test_format_period(self):
         """Test period labels format compactly for sub-hour and hour ranges."""
         from custom_components.geekmagic.widgets.chart import _format_period
