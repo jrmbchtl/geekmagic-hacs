@@ -298,6 +298,40 @@ class TestCanvasWidget:
         assert widget.WIDGET_TYPE == "canvas"
         assert len(widget._raw_children) == 2
 
+    def test_init_with_yaml_string(self):
+        """Test initialization with a YAML string."""
+        config = WidgetConfig(
+            widget_type="canvas",
+            slot=0,
+            options={"children": '- type: text\n  text: Hello\n- type: rect\n  fill: "#ff0000"\n'},
+        )
+        widget = CanvasWidget(config)
+        assert len(widget._raw_children) == 2
+        assert widget._raw_children[0]["type"] == "text"
+        assert widget._raw_children[0]["text"] == "Hello"
+        assert widget._raw_children[1]["type"] == "rect"
+        assert widget._raw_children[1]["fill"] == "#ff0000"
+
+    def test_init_with_empty_yaml_string(self):
+        """Test initialization with an empty YAML string."""
+        config = WidgetConfig(
+            widget_type="canvas",
+            slot=0,
+            options={"children": ""},
+        )
+        widget = CanvasWidget(config)
+        assert widget._raw_children == []
+
+    def test_init_with_invalid_yaml(self):
+        """Test initialization with invalid YAML returns empty list."""
+        config = WidgetConfig(
+            widget_type="canvas",
+            slot=0,
+            options={"children": "{{ broken yaml: ["},
+        )
+        widget = CanvasWidget(config)
+        assert widget._raw_children == []
+
     def test_render_returns_stack(self):
         """Test render returns a Stack component."""
         config = WidgetConfig(
@@ -373,9 +407,7 @@ class TestCanvasWidget:
             options={"children": [{"type": "text", "text": "original"}]},
         )
         widget = CanvasWidget(config)
-        state = WidgetState(
-            canvas_tree=[{"type": "text", "text": "overridden"}]
-        )
+        state = WidgetState(canvas_tree=[{"type": "text", "text": "overridden"}])
         result = widget.render(_MOCK_CTX, state)
         assert isinstance(result.children[0], Text)
         assert result.children[0].text == "overridden"

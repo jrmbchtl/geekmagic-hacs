@@ -316,8 +316,8 @@ class L {
     for (; (r = b.nextNode()) !== null && n.length < l; ) {
       if (r.nodeType === 1) {
         if (r.hasAttributes()) for (const d of r.getAttributeNames()) if (d.endsWith(he)) {
-          const f = v[o++], _ = r.getAttribute(d).split(y), U = /([.?@])?(.*)/.exec(f);
-          n.push({ type: 1, index: a, name: U[2], strings: _, ctor: U[1] === "." ? Oe : U[1] === "?" ? Ie : U[1] === "@" ? Me : z }), r.removeAttribute(d);
+          const f = v[o++], _ = r.getAttribute(d).split(y), N = /([.?@])?(.*)/.exec(f);
+          n.push({ type: 1, index: a, name: N[2], strings: _, ctor: N[1] === "." ? Oe : N[1] === "?" ? Ie : N[1] === "@" ? Me : z }), r.removeAttribute(d);
         } else d.startsWith(y) && (n.push({ type: 6, index: a }), r.removeAttribute(d));
         if (ue.test(r.tagName)) {
           const d = r.textContent.split(y), f = d.length - 1;
@@ -566,7 +566,7 @@ const Te = (s) => (e, t) => {
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const Ue = { attribute: !0, type: String, converter: j, reflect: !1, hasChanged: J }, Ne = (s = Ue, e, t) => {
+const Ne = { attribute: !0, type: String, converter: j, reflect: !1, hasChanged: J }, Ue = (s = Ne, e, t) => {
   const { kind: i, metadata: r } = t;
   let a = globalThis.litPropertyMetadata.get(r);
   if (a === void 0 && globalThis.litPropertyMetadata.set(r, a = /* @__PURE__ */ new Map()), i === "setter" && ((s = Object.create(s)).wrapped = !0), a.set(t.name, s), i === "accessor") {
@@ -588,7 +588,7 @@ const Ue = { attribute: !0, type: String, converter: j, reflect: !1, hasChanged:
   throw Error("Unsupported decorator location: " + i);
 };
 function T(s) {
-  return (e, t) => typeof t == "object" ? Ne(s, e, t) : ((i, r, a) => {
+  return (e, t) => typeof t == "object" ? Ue(s, e, t) : ((i, r, a) => {
     const o = r.hasOwnProperty(a);
     return r.constructor.createProperty(a, i), o ? Object.getOwnPropertyDescriptor(r, a) : void 0;
   })(s, e, t);
@@ -601,7 +601,7 @@ function T(s) {
 function m(s) {
   return T({ ...s, state: !0, attribute: !1 });
 }
-function N(s) {
+function U(s) {
   if (!s || s.length !== 3) return "#000000";
   const [e, t, i] = s;
   return `#${[e, t, i].map((r) => Math.max(0, Math.min(255, r)).toString(16).padStart(2, "0")).join("")}`;
@@ -1274,6 +1274,22 @@ let u = class extends O {
             ></ha-input>
           </div>
         `;
+      case "longtext":
+        return c`
+          <div class="option-field">
+            <textarea
+              class="yaml-editor"
+              .value=${i || ""}
+              placeholder=${t.placeholder || "Enter YAML component tree..."}
+              @input=${(o) => this._updateWidgetOption(
+          s,
+          t.key,
+          o.target.value
+        )}
+              spellcheck="false"
+            ></textarea>
+          </div>
+        `;
       case "icon":
         return c`
           <div class="option-field">
@@ -1298,10 +1314,10 @@ let u = class extends O {
             <div class="color-hex-input">
               <div
                 class="color-preview-swatch"
-                style="background-color: ${N(i)}"
+                style="background-color: ${U(i)}"
               ></div>
               <ha-input
-                .value=${N(i)}
+                .value=${U(i)}
                 .label=${"Hex (fallback)"}
                 placeholder="#FF5500 or 255,85,0"
                 @change=${(o) => {
@@ -1414,11 +1430,11 @@ let u = class extends O {
                   <div class="threshold-hex-row">
                     <div
                       class="color-preview-swatch"
-                      style="background-color: ${N(r.color)}"
+                      style="background-color: ${U(r.color)}"
                     ></div>
                     <ha-input
                       class="threshold-hex-input"
-                      .value=${N(r.color)}
+                      .value=${U(r.color)}
                       label="Hex (fallback)"
                       placeholder="#FF5500"
                       @change=${(o) => {
@@ -2246,6 +2262,25 @@ u.styles = fe`
 
     .option-field:last-child {
       margin-bottom: 0;
+    }
+
+    .yaml-editor {
+      width: 100%;
+      min-height: 200px;
+      padding: 8px;
+      border: 1px solid var(--divider-color);
+      border-radius: 8px;
+      background: var(--input-fill-color);
+      color: var(--primary-text-color);
+      font-family: var(--code-font-family, "Courier New", monospace);
+      font-size: 13px;
+      line-height: 1.5;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .yaml-editor:focus {
+      outline: none;
+      border-color: var(--primary-color);
     }
 
     .option-row {

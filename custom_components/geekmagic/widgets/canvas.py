@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import yaml
+
 from .base import Widget, WidgetConfig
 from .colors import (
     THEME_ERROR,
@@ -219,9 +221,7 @@ def _handle_circle(node: dict, ctx: RenderContext, state: WidgetState) -> Compon
 def _handle_line(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     raw_points = node.get("points", [])
     points = [
-        (int(p[0]), int(p[1]))
-        for p in raw_points
-        if isinstance(p, (list, tuple)) and len(p) >= 2
+        (int(p[0]), int(p[1])) for p in raw_points if isinstance(p, (list, tuple)) and len(p) >= 2
     ]
     return Line(
         points=points,
@@ -233,9 +233,7 @@ def _handle_line(node: dict, ctx: RenderContext, state: WidgetState) -> Componen
 def _handle_polygon(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     raw_points = node.get("points", [])
     points = [
-        (int(p[0]), int(p[1]))
-        for p in raw_points
-        if isinstance(p, (list, tuple)) and len(p) >= 2
+        (int(p[0]), int(p[1])) for p in raw_points if isinstance(p, (list, tuple)) and len(p) >= 2
     ]
     return Polygon(
         points=points,
@@ -252,9 +250,7 @@ def _handle_layout(
 
     def handler(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
         raw_children = node.get("children", [])
-        children = [
-            _dict_to_component(c, ctx, state) for c in raw_children if isinstance(c, dict)
-        ]
+        children = [_dict_to_component(c, ctx, state) for c in raw_children if isinstance(c, dict)]
         if issubclass(component_cls, (Row, Column)):
             kwargs: dict[str, Any] = {
                 "gap": int(node.get("gap", 0)),
@@ -331,14 +327,22 @@ class CanvasWidget(Widget):
         "name": "Canvas",
         "needs_entity": False,
         "options": [
-            {"key": "children", "type": "text", "label": "YAML Component Tree (JSON)"},
+            {"key": "children", "type": "longtext", "label": "YAML Component Tree"},
         ],
     }
 
     def __init__(self, config: WidgetConfig) -> None:
         """Initialize the canvas widget."""
         super().__init__(config)
-        self._raw_children: list[dict] = config.options.get("children", [])
+        raw = config.options.get("children", [])
+        if isinstance(raw, str):
+            try:
+                parsed = yaml.safe_load(raw)
+            except yaml.YAMLError:
+                parsed = None
+            self._raw_children: list[dict] = parsed if isinstance(parsed, list) else []
+        else:
+            self._raw_children = raw
 
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:
         """Render the canvas widget."""
