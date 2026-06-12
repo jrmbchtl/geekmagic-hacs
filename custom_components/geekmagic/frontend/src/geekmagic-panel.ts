@@ -600,25 +600,6 @@ export class GeekMagicPanel extends LitElement {
       margin-bottom: 0;
     }
 
-    .yaml-editor {
-      width: 100%;
-      min-height: 200px;
-      padding: 8px;
-      border: 1px solid var(--divider-color);
-      border-radius: 8px;
-      background: var(--input-fill-color);
-      color: var(--primary-text-color);
-      font-family: var(--code-font-family, "Courier New", monospace);
-      font-size: 13px;
-      line-height: 1.5;
-      resize: vertical;
-      box-sizing: border-box;
-    }
-    .yaml-editor:focus {
-      outline: none;
-      border-color: var(--primary-color);
-    }
-
     .option-row {
       display: flex;
       align-items: center;
@@ -1584,18 +1565,15 @@ export class GeekMagicPanel extends LitElement {
       case "longtext":
         return html`
           <div class="option-field">
-            <textarea
-              class="yaml-editor"
+            <ha-selector
+              .hass=${this.hass}
+              .selector=${{ text: { multiline: true } }}
               .value=${value || ""}
-              placeholder=${opt.placeholder || "Enter YAML component tree..."}
-              @input=${(e: Event) =>
-                this._updateWidgetOption(
-                  slot,
-                  opt.key,
-                  (e.target as HTMLTextAreaElement).value
-                )}
-              spellcheck="false"
-            ></textarea>
+              .label=${opt.label}
+              .placeholder=${opt.placeholder || ""}
+              @value-changed=${(e: CustomEvent) =>
+                this._updateWidgetOption(slot, opt.key, e.detail.value)}
+            ></ha-selector>
           </div>
         `;
 

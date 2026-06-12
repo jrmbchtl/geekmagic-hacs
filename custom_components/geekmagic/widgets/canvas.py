@@ -327,7 +327,12 @@ class CanvasWidget(Widget):
         "name": "Canvas",
         "needs_entity": False,
         "options": [
-            {"key": "children", "type": "longtext", "label": "YAML Component Tree"},
+            {
+                "key": "children",
+                "type": "longtext",
+                "label": "Component Tree (YAML list of nodes)",
+                "placeholder": "- type: text\n  x: 10\n  y: 8\n  text: Hello\n  font: primary",
+            },
         ],
     }
 
@@ -340,7 +345,13 @@ class CanvasWidget(Widget):
                 parsed = yaml.safe_load(raw)
             except yaml.YAMLError:
                 parsed = None
-            self._raw_children: list[dict] = parsed if isinstance(parsed, list) else []
+            if isinstance(parsed, list):
+                self._raw_children: list[dict] = parsed
+            elif isinstance(parsed, dict) and "children" in parsed:
+                extracted = parsed["children"]
+                self._raw_children = extracted if isinstance(extracted, list) else []
+            else:
+                self._raw_children = []
         else:
             self._raw_children = raw
 

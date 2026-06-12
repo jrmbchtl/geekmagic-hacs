@@ -332,6 +332,35 @@ class TestCanvasWidget:
         widget = CanvasWidget(config)
         assert widget._raw_children == []
 
+    def test_init_with_children_dict_extraction(self):
+        """Test extraction from a YAML dict with a 'children' key."""
+        config = WidgetConfig(
+            widget_type="canvas",
+            slot=0,
+            options={
+                "children": (
+                    "children:\n"
+                    '  - type: text\n    text: extracted\n'
+                    '  - type: rect\n    fill: "#00ff00"\n'
+                )
+            },
+        )
+        widget = CanvasWidget(config)
+        assert len(widget._raw_children) == 2
+        assert widget._raw_children[0]["type"] == "text"
+        assert widget._raw_children[0]["text"] == "extracted"
+        assert widget._raw_children[1]["type"] == "rect"
+
+    def test_init_with_children_dict_no_list(self):
+        """Test dict with 'children' as non-list falls back to empty."""
+        config = WidgetConfig(
+            widget_type="canvas",
+            slot=0,
+            options={"children": "children: not_a_list\n"},
+        )
+        widget = CanvasWidget(config)
+        assert widget._raw_children == []
+
     def test_render_returns_stack(self):
         """Test render returns a Stack component."""
         config = WidgetConfig(
