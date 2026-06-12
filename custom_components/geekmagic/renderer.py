@@ -780,6 +780,26 @@ class Renderer:
         """
         self.draw_rounded_rect(draw, rect, radius=radius, fill=background, outline=border_color)
 
+    def draw_polygon(
+        self,
+        draw: ImageDraw.ImageDraw,
+        xy: list[tuple[int, int]],
+        fill: tuple[int, int, int] | None = None,
+        outline: tuple[int, int, int] | None = None,
+        width: int = 1,
+    ) -> None:
+        """Draw a polygon.
+
+        Args:
+            draw: ImageDraw instance
+            xy: List of (x, y) vertices
+            fill: Fill color
+            outline: Outline color
+            width: Outline width
+        """
+        scaled_xy = [self._scale_point(p) for p in xy]
+        draw.polygon(scaled_xy, fill=fill, outline=outline, width=self._s(width))
+
     def draw_ellipse(
         self,
         draw: ImageDraw.ImageDraw,

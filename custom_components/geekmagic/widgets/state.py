@@ -95,6 +95,9 @@ class WidgetState:
     image: Image.Image | None = field(default=None)
     forecast: list[dict[str, Any]] = field(default_factory=list)
 
+    # Pre-rendered canvas widget tree (templates resolved)
+    canvas_tree: list[dict] | None = field(default=None)
+
     # Current time (for clock widgets)
     now: datetime | None = None
 

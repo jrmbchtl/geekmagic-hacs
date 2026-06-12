@@ -570,6 +570,30 @@ class RenderContext:
             off_color=self._resolve_color(off_color or COLOR_GRAY),
         )
 
+    def draw_polygon(
+        self,
+        xy: list[tuple[int, int]],
+        fill: tuple[int, int, int] | None = None,
+        outline: tuple[int, int, int] | None = None,
+        width: int = 1,
+    ) -> None:
+        """Draw a polygon in local coordinates.
+
+        Args:
+            xy: List of (x, y) vertices in local coordinates
+            fill: Fill color
+            outline: Outline color
+            width: Outline width
+        """
+        abs_xy = [self._abs_point(*p) for p in xy]
+        self._renderer.draw_polygon(
+            self._draw,
+            abs_xy,
+            fill=self._resolve_color(fill) if fill is not None else None,
+            outline=self._resolve_color(outline) if outline is not None else None,
+            width=width,
+        )
+
     def draw_ellipse(
         self,
         rect: tuple[int, int, int, int],

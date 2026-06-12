@@ -19,6 +19,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+from PIL import Image
+from PIL import ImageDraw as PILImageDraw
+
 from ._flex import (
     AUTO,
     PCT,
@@ -44,6 +47,8 @@ from .colors import (
 )
 
 if TYPE_CHECKING:
+    from PIL.ImageFont import FreeTypeFont, ImageFont
+
     from ..render_context import RenderContext
 
 
@@ -139,6 +144,7 @@ class Text(Component):
     align: Align = "center"
     truncate: bool = False  # Auto-truncate with ellipsis if text exceeds width
     auto_fit: bool = False  # Shrink font progressively until text fits, then truncate
+    rotation: int = 0  # Rotation in degrees (0-360), rendered via temp image
 
     _FONT_SHRINK_CHAIN: ClassVar[tuple[str, ...]] = (
         "primary",
@@ -198,7 +204,46 @@ class Text(Component):
 
         # Resolve theme-aware colors at render time
         resolved_color = _resolve_color(self.color, ctx)
-        ctx.draw_text(display_text, (text_x, y + height // 2), font, resolved_color, anchor)
+
+        if self.rotation:
+            self._render_rotated(ctx, display_text, font, resolved_color, text_x, y, height)
+        else:
+            ctx.draw_text(display_text, (text_x, y + height // 2), font, resolved_color, anchor)
+
+    def _render_rotated(
+        self,
+        ctx: RenderContext,
+        text: str,
+        font: FreeTypeFont | ImageFont,
+        color: tuple[int, int, int],
+        cx: int,
+        cy: int,
+        height: int,
+    ) -> None:
+        """Render text rotated around its center point."""
+        scale = ctx._renderer.scale  # noqa: SLF001
+        text_w, text_h = ctx.get_text_size(text, font)
+        scaled_w = text_w * scale
+        scaled_h = text_h * scale
+        if scaled_w <= 0 or scaled_h <= 0:
+            return
+
+        padding = 4 * scale
+        temp = Image.new("RGBA", (scaled_w + padding * 2, scaled_h + padding * 2), (0, 0, 0, 0))
+        temp_draw = PILImageDraw.Draw(temp)
+        temp_draw.text(
+            (temp.width // 2, temp.height // 2), text, font=font, fill=color, anchor="mm"
+        )
+
+        rotated = temp.rotate(self.rotation, expand=True, resample=Image.Resampling.BICUBIC)
+
+        center_x = cx * scale
+        center_y = (cy + height // 2) * scale
+        paste_x = center_x - rotated.width // 2
+        paste_y = center_y - rotated.height // 2
+
+        slot_img: Image.Image = ctx._draw._image  # noqa: SLF001
+        slot_img.alpha_composite(rotated, (int(paste_x), int(paste_y)))
 
 
 @dataclass
@@ -724,6 +769,151 @@ class Center(Component):
 
 
 # ============================================================================
+# Free-form / Canvas Components
+# ============================================================================
+
+
+@dataclass
+class Positioned(Component):
+    """Wraps a child with absolute (x, y) offset and optional size constraint.
+
+    Used inside a ``Stack`` to place children at fixed pixel positions.
+    When ``width``/``height`` are set, the child is constrained to that box.
+    """
+
+    child: Component
+    x: int = 0
+    y: int = 0
+    width: int | None = None
+    height: int | None = None
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        w = self.width or max_width
+        h = self.height or max_height
+        return self.child.measure(ctx, w, h)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        cw = self.width or (width - self.x)
+        ch = self.height or (height - self.y)
+        self.child.render(ctx, x + self.x, y + self.y, cw, ch)
+
+
+@dataclass
+class Rect(Component):
+    """Filled/stroked rectangle component.
+
+    Fills the entire container by default. Pair with ``Positioned`` for
+    explicit positioning and size. Supports sharp or rounded corners.
+    """
+
+    fill: Color | None = None
+    outline: Color | None = None
+    width: int = 1
+    radius: int | None = None  # None = sharp corners
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        return (max_width, max_height)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        resolved_fill = _resolve_color(self.fill, ctx) if self.fill is not None else None
+        resolved_outline = _resolve_color(self.outline, ctx) if self.outline is not None else None
+        if self.radius is not None:
+            ctx.draw_rounded_rect(
+                (x, y, x + width, y + height),
+                radius=self.radius,
+                fill=resolved_fill,
+                outline=resolved_outline,
+                width=self.width,
+            )
+        else:
+            ctx.draw_rect(
+                (x, y, x + width, y + height),
+                fill=resolved_fill,
+                outline=resolved_outline,
+                width=self.width,
+            )
+
+
+@dataclass
+class Circle(Component):
+    """Ellipse/circle component.
+
+    Inscribes an ellipse in the container. Pair with ``Positioned(w, h)``
+    where w == h for a perfect circle.
+    """
+
+    fill: Color | None = None
+    outline: Color | None = None
+    width: int = 1
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        size = min(max_width, max_height)
+        return (size, size)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        ctx.draw_ellipse(
+            (x, y, x + width, y + height),
+            fill=_resolve_color(self.fill, ctx) if self.fill is not None else None,
+            outline=_resolve_color(self.outline, ctx) if self.outline is not None else None,
+            width=self.width,
+        )
+
+
+@dataclass
+class Line(Component):
+    """Polyline component.
+
+    Renders a line through a sequence of (x, y) points. Coordinates are
+    relative to the component's container. Pair with ``Positioned`` for
+    absolute placement.
+    """
+
+    points: list[tuple[int, int]]
+    color: Color = THEME_TEXT_PRIMARY
+    width: int = 1
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        xs = [p[0] for p in self.points]
+        ys = [p[1] for p in self.points]
+        return (max(xs) - min(xs) if xs else 0, max(ys) - min(ys) if ys else 0)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        offset_xy = [(px + x, py + y) for px, py in self.points]
+        ctx.draw_line(
+            offset_xy,
+            fill=_resolve_color(self.color, ctx),
+            width=self.width,
+        )
+
+
+@dataclass
+class Polygon(Component):
+    """Filled polygon component.
+
+    Renders a filled polygon through a sequence of (x, y) vertices.
+    """
+
+    points: list[tuple[int, int]]
+    fill: Color | None = None
+    outline: Color | None = None
+    width: int = 1
+
+    def measure(self, ctx: RenderContext, max_width: int, max_height: int) -> tuple[int, int]:
+        xs = [p[0] for p in self.points]
+        ys = [p[1] for p in self.points]
+        return (max(xs) - min(xs) if xs else 0, max(ys) - min(ys) if ys else 0)
+
+    def render(self, ctx: RenderContext, x: int, y: int, width: int, height: int) -> None:
+        offset_xy = [(px + x, py + y) for px, py in self.points]
+        ctx.draw_polygon(
+            offset_xy,
+            fill=_resolve_color(self.fill, ctx) if self.fill is not None else None,
+            outline=_resolve_color(self.outline, ctx) if self.outline is not None else None,
+            width=self.width,
+        )
+
+
+# ============================================================================
 # Export all components
 # ============================================================================
 
@@ -743,13 +933,18 @@ __all__ = [
     "Arc",
     "Bar",
     "Center",
+    "Circle",
     "Color",
     "Column",
     "Component",
     "Flex",
     "Icon",
     "Justify",
+    "Line",
     "Panel",
+    "Polygon",
+    "Positioned",
+    "Rect",
     "Ring",
     "Row",
     "Spacer",

@@ -64,3 +64,6 @@ home-assistant_v2.db
 # Local HA pod test snapshots
 .ha-pod-backup/
 scripts/ha-pod-deploy.sh
+
+CLAUDE.md
+AGENTS.md

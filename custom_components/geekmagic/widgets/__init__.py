@@ -8,6 +8,7 @@ from .attribute_list import AttributeListWidget
 from .base import Widget, WidgetConfig
 from .camera import CameraWidget
 from .candlestick import CandlestickWidget
+from .canvas import CanvasWidget
 from .chart import ChartWidget
 from .climate import ClimateWidget
 from .clock import ClockWidget
@@ -26,6 +27,7 @@ __all__ = [
     "AttributeListWidget",
     "CameraWidget",
     "CandlestickWidget",
+    "CanvasWidget",
     "ChartWidget",
     "ClimateWidget",
     "ClockWidget",
@@ -48,6 +50,7 @@ _ALL_WIDGETS: list[type[Widget]] = [
     AttributeListWidget,
     CameraWidget,
     CandlestickWidget,
+    CanvasWidget,
     ChartWidget,
     ClimateWidget,
     ClockWidget,

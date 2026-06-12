@@ -80,6 +80,7 @@ from .widgets.candlestick import (
     aggregate_ohlc,
     extract_timestamped_values,
 )
+from .widgets.canvas import CanvasWidget
 from .widgets.chart import ChartWidget
 from .widgets.clock import ClockWidget
 from .widgets.icon import IconWidget
@@ -785,6 +786,13 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                     widget_tz = ZoneInfo(widget.timezone)
                     widget_now = datetime.now(tz=widget_tz)
 
+            # Pre-resolve templates for canvas widget
+            canvas_tree: list[dict] | None = None
+            if isinstance(widget, CanvasWidget):
+                canvas_tree = self._resolve_canvas_templates(
+                    widget.config.options.get("children", [])
+                )
+
             states[slot.index] = WidgetState(
                 entity=primary_entity,
                 entities=additional,
@@ -793,9 +801,29 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                 image=image,
                 forecast=forecast,
                 now=widget_now,
+                canvas_tree=canvas_tree,
             )
 
         return states
+
+    def _resolve_canvas_templates(self, node: Any) -> Any:
+        """Recursively resolve Jinja2 templates in a canvas widget tree.
+
+        Runs in the async context where ``hass.states`` is safe. Strings
+        containing ``{{...}}`` are rendered via HA's template engine.
+        """
+        if isinstance(node, dict):
+            return {k: self._resolve_canvas_templates(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [self._resolve_canvas_templates(item) for item in node]
+        if isinstance(node, str) and "{{" in node:
+            try:
+                from homeassistant.helpers.template import Template
+
+                return Template(node, self.hass).async_render()
+            except Exception:
+                return node
+        return node
 
     def _render_display(self) -> tuple[bytes, bytes]:
         """Render the display image (runs in executor thread).
