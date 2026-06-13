@@ -792,6 +792,10 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             # Read pre-resolved canvas template tree
             if isinstance(widget, CanvasWidget):
                 canvas_tree = self._canvas_template_cache.get(id(widget))
+                if canvas_tree is None:
+                    _LOGGER.debug("Canvas cache MISS for widget id=%d", id(widget))
+                else:
+                    _LOGGER.debug("Canvas cache HIT for widget id=%d", id(widget))
             else:
                 canvas_tree = None
 
@@ -816,6 +820,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         ``Template.render()`` from an executor thread is fragile.
         """
         self._canvas_template_cache.clear()
+        count = 0
         for layout in self._layouts:
             for slot in layout.slots:
                 widget = slot.widget
@@ -823,8 +828,11 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                     continue
                 tree = widget._raw_children  # noqa: SLF001
                 if tree:
+                    count += 1
                     resolved = await self._async_resolve_canvas_tree(tree)
                     self._canvas_template_cache[id(widget)] = resolved
+        if count:
+            _LOGGER.debug("Pre-resolved canvas templates for %d widget(s)", count)
 
     async def _async_resolve_canvas_tree(self, node: Any) -> Any:
         """Recursively resolve Jinja2 templates in a canvas widget tree."""
@@ -833,12 +841,21 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         if isinstance(node, list):
             return [await self._async_resolve_canvas_tree(item) for item in node]
         if isinstance(node, str) and "{{" in node:
+            _LOGGER.debug("Canvas template string: %s", node[:120])
             try:
                 from homeassistant.helpers.template import Template
 
-                return await Template(node, self.hass).async_render()
-            except Exception:
-                return node
+                result = await Template(node, self.hass).async_render()
+                _LOGGER.debug(
+                    "Canvas template resolved: %s -> %s",
+                    node[:60],
+                    result if isinstance(result, str) else repr(result),
+                )
+            except Exception as exc:
+                _LOGGER.warning("Canvas template FAILED: %s -- %s", node[:80], exc)
+            else:
+                return result
+            return node
         return node
 
     def _render_display(self) -> tuple[bytes, bytes]:

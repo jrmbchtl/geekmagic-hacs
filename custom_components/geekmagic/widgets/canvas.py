@@ -70,6 +70,10 @@ if TYPE_CHECKING:
     from ..render_context import RenderContext
     from .state import WidgetState
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Colour name → sentinel mapping
@@ -358,6 +362,10 @@ class CanvasWidget(Widget):
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:
         """Render the canvas widget."""
         tree = state.canvas_tree if state.canvas_tree is not None else self._raw_children
+        if state.canvas_tree is not None:
+            _LOGGER.debug("CanvasWidget.render using resolved state tree")
+        else:
+            _LOGGER.debug("CanvasWidget.render using raw_children (no state tree)")
 
         components: list[Component] = []
         for node in tree:
