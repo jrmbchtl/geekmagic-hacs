@@ -119,6 +119,26 @@ def _resolve_color(value: Any) -> Color | None:
     return _parse_color(value)
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Convert to int safely, returning default on failure."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Convert to float safely, returning default on failure."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Type → Component handler mapping
 # ---------------------------------------------------------------------------
@@ -133,7 +153,7 @@ def _handle_text(node: dict, ctx: RenderContext, state: WidgetState) -> Componen
         align=str(node.get("align", "center")),  # type: ignore[arg-type]
         truncate=bool(node.get("truncate", False)),
         auto_fit=bool(node.get("auto_fit", False)),
-        rotation=int(node.get("rotation", 0)),
+        rotation=_safe_int(node.get("rotation")),
     )
 
 
@@ -147,7 +167,7 @@ def _handle_icon(node: dict, ctx: RenderContext, state: WidgetState) -> Componen
 
 def _handle_bar(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     return Bar(
-        percent=float(node.get("percent", 0)),
+        percent=_safe_float(node.get("percent")),
         color=_resolve_color(node.get("color", "primary")) or THEME_PRIMARY,
         background=_resolve_color(node.get("background")),
         height=node.get("height"),
@@ -156,7 +176,7 @@ def _handle_bar(node: dict, ctx: RenderContext, state: WidgetState) -> Component
 
 def _handle_ring(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     return Ring(
-        percent=float(node.get("percent", 0)),
+        percent=_safe_float(node.get("percent")),
         color=_resolve_color(node.get("color", "primary")) or THEME_PRIMARY,
         background=_resolve_color(node.get("background")),
         thickness=node.get("thickness"),
@@ -165,7 +185,7 @@ def _handle_ring(node: dict, ctx: RenderContext, state: WidgetState) -> Componen
 
 def _handle_arc(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     return Arc(
-        percent=float(node.get("percent", 0)),
+        percent=_safe_float(node.get("percent")),
         color=_resolve_color(node.get("color", "primary")) or THEME_PRIMARY,
         background=_resolve_color(node.get("background")),
         width=node.get("width"),
@@ -183,7 +203,7 @@ def _handle_sparkline(node: dict, ctx: RenderContext, state: WidgetState) -> Com
 
 def _handle_vertical_bar(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     return VerticalBar(
-        percent=float(node.get("percent", 0)),
+        percent=_safe_float(node.get("percent")),
         color=_resolve_color(node.get("color", "primary")) or THEME_PRIMARY,
         background=_resolve_color(node.get("background")),
         width=node.get("width"),
@@ -202,14 +222,14 @@ def _handle_panel(node: dict, ctx: RenderContext, state: WidgetState) -> Compone
 
 
 def _handle_spacer(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
-    return Spacer(min_size=int(node.get("min_size", 0)))
+    return Spacer(min_size=_safe_int(node.get("min_size")))
 
 
 def _handle_rect(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     return Rect(
         fill=_resolve_color(node.get("fill")),
         outline=_resolve_color(node.get("outline")),
-        width=int(node.get("width", 1)),
+        width=_safe_int(node.get("width"), 1),
         radius=node.get("radius"),
     )
 
@@ -218,32 +238,46 @@ def _handle_circle(node: dict, ctx: RenderContext, state: WidgetState) -> Compon
     return Circle(
         fill=_resolve_color(node.get("fill")),
         outline=_resolve_color(node.get("outline")),
-        width=int(node.get("width", 1)),
+        width=_safe_int(node.get("width"), 1),
     )
 
 
 def _handle_line(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     raw_points = node.get("points", [])
-    points = [
-        (int(p[0]), int(p[1])) for p in raw_points if isinstance(p, (list, tuple)) and len(p) >= 2
-    ]
+    points: list[tuple[int, int]] = []
+    for p in raw_points:
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            continue
+        try:
+            x = int(p[0])
+            y = int(p[1])
+            points.append((x, y))
+        except (ValueError, TypeError):
+            continue
     return Line(
         points=points,
         color=_resolve_color(node.get("color", "text_primary")) or THEME_TEXT_PRIMARY,
-        width=int(node.get("width", 1)),
+        width=_safe_int(node.get("width"), 1),
     )
 
 
 def _handle_polygon(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
     raw_points = node.get("points", [])
-    points = [
-        (int(p[0]), int(p[1])) for p in raw_points if isinstance(p, (list, tuple)) and len(p) >= 2
-    ]
+    points: list[tuple[int, int]] = []
+    for p in raw_points:
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            continue
+        try:
+            x = int(p[0])
+            y = int(p[1])
+            points.append((x, y))
+        except (ValueError, TypeError):
+            continue
     return Polygon(
         points=points,
         fill=_resolve_color(node.get("fill")),
         outline=_resolve_color(node.get("outline")),
-        width=int(node.get("width", 1)),
+        width=_safe_int(node.get("width"), 1),
     )
 
 
@@ -257,8 +291,8 @@ def _handle_layout(
         children = [_dict_to_component(c, ctx, state) for c in raw_children if isinstance(c, dict)]
         if issubclass(component_cls, (Row, Column)):
             kwargs: dict[str, Any] = {
-                "gap": int(node.get("gap", 0)),
-                "padding": int(node.get("padding", 0)),
+                "gap": _safe_int(node.get("gap")),
+                "padding": _safe_int(node.get("padding")),
             }
             if "align" in node:
                 kwargs["align"] = node["align"]
