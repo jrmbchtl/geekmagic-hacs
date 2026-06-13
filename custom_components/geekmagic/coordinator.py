@@ -856,7 +856,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         try:
             from homeassistant.helpers.template import Template
 
-            processed = await Template(raw_yaml, self.hass).async_render()
+            processed = Template(raw_yaml, self.hass).async_render()
         except Exception as exc:
             _LOGGER.warning(
                 "Canvas raw template pre-process failed (%s): %s",

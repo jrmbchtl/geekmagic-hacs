@@ -599,7 +599,7 @@ async def ws_preview_render(
                 try:
                     from homeassistant.helpers.template import Template
 
-                    raw = await Template(raw, hass).async_render()
+                    raw = Template(raw, hass).async_render()
                 except Exception:
                     _LOGGER.debug("Canvas YAML pre-process failed, treating as raw YAML")
                 try:
