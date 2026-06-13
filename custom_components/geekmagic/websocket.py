@@ -570,6 +570,48 @@ async def ws_preview_render(
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch forecast for %s: %s", entity_id, err)
 
+    # Pre-resolve canvas widget templates
+    canvas_trees: dict[int, list[dict]] = {}
+    import yaml
+
+    async def _async_resolve_canvas_preview(node: Any, hass: HomeAssistant) -> Any:
+        """Recursively resolve Jinja2 templates in a canvas widget tree for preview."""
+        if isinstance(node, dict):
+            return {k: await _async_resolve_canvas_preview(v, hass) for k, v in node.items()}
+        if isinstance(node, list):
+            return [await _async_resolve_canvas_preview(item, hass) for item in node]
+        if isinstance(node, str) and "{{" in node:
+            try:
+                from homeassistant.helpers.template import Template
+
+                return Template(node, hass).async_render()
+            except Exception:
+                return node
+        return node
+
+    for widget_data in view_config.get("widgets", []):
+        if widget_data.get("type") == "canvas":
+            slot = widget_data.get("slot", 0)
+            raw = widget_data.get("options", {}).get("children", [])
+            if isinstance(raw, str):
+                try:
+                    parsed = yaml.safe_load(raw)
+                except yaml.YAMLError:
+                    parsed = None
+                if isinstance(parsed, list):
+                    raw = parsed
+                elif isinstance(parsed, dict) and "children" in parsed:
+                    extracted = parsed["children"]
+                    raw = extracted if isinstance(extracted, list) else []
+                else:
+                    raw = []
+            elif not isinstance(raw, list):
+                raw = []
+            if raw:
+                resolved = await _async_resolve_canvas_preview(raw, hass)
+                if resolved:
+                    canvas_trees[slot] = resolved
+
     def _render() -> bytes:
         """Render the view (runs in executor)."""
         renderer = Renderer()
@@ -671,6 +713,7 @@ async def ws_preview_render(
                 forecast=forecast,
                 image=None,
                 now=widget_now,
+                canvas_tree=canvas_trees.get(slot),
             )
 
         # Render
