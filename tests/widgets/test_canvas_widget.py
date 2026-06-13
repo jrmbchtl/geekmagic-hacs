@@ -340,7 +340,7 @@ class TestCanvasWidget:
             options={
                 "children": (
                     "children:\n"
-                    '  - type: text\n    text: extracted\n'
+                    "  - type: text\n    text: extracted\n"
                     '  - type: rect\n    fill: "#00ff00"\n'
                 )
             },

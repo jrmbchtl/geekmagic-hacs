@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+import yaml
+
 if TYPE_CHECKING:
     import asyncio
 
@@ -789,9 +791,20 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             # Pre-resolve templates for canvas widget
             canvas_tree: list[dict] | None = None
             if isinstance(widget, CanvasWidget):
-                canvas_tree = self._resolve_canvas_templates(
-                    widget.config.options.get("children", [])
-                )
+                raw = widget.config.options.get("children", [])
+                if isinstance(raw, str):
+                    try:
+                        parsed = yaml.safe_load(raw)
+                    except yaml.YAMLError:
+                        parsed = None
+                    if isinstance(parsed, list):
+                        canvas_tree = self._resolve_canvas_templates(parsed)
+                    elif isinstance(parsed, dict) and "children" in parsed:
+                        extracted = parsed["children"]
+                        if isinstance(extracted, list):
+                            canvas_tree = self._resolve_canvas_templates(extracted)
+                elif isinstance(raw, list):
+                    canvas_tree = self._resolve_canvas_templates(raw)
 
             states[slot.index] = WidgetState(
                 entity=primary_entity,
