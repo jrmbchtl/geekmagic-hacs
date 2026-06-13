@@ -8,8 +8,6 @@ import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-import yaml
-
 if TYPE_CHECKING:
     import asyncio
 
@@ -369,6 +367,9 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         # Sleep/wake state — when paused, the render/upload cycle is skipped entirely
         self._paused: bool = False
         self._pre_pause_brightness: int | None = None
+
+        # Canvas widget template cache (resolved async, consumed in executor)
+        self._canvas_template_cache: dict[int, list[dict]] = {}
 
         # Backoff state for handling offline devices
         # When device is unreachable, increase update interval exponentially
@@ -788,23 +789,11 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                     widget_tz = ZoneInfo(widget.timezone)
                     widget_now = datetime.now(tz=widget_tz)
 
-            # Pre-resolve templates for canvas widget
-            canvas_tree: list[dict] | None = None
+            # Read pre-resolved canvas template tree
             if isinstance(widget, CanvasWidget):
-                raw = widget.config.options.get("children", [])
-                if isinstance(raw, str):
-                    try:
-                        parsed = yaml.safe_load(raw)
-                    except yaml.YAMLError:
-                        parsed = None
-                    if isinstance(parsed, list):
-                        canvas_tree = self._resolve_canvas_templates(parsed)
-                    elif isinstance(parsed, dict) and "children" in parsed:
-                        extracted = parsed["children"]
-                        if isinstance(extracted, list):
-                            canvas_tree = self._resolve_canvas_templates(extracted)
-                elif isinstance(raw, list):
-                    canvas_tree = self._resolve_canvas_templates(raw)
+                canvas_tree = self._canvas_template_cache.get(id(widget))
+            else:
+                canvas_tree = None
 
             states[slot.index] = WidgetState(
                 entity=primary_entity,
@@ -819,20 +808,35 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
 
         return states
 
-    def _resolve_canvas_templates(self, node: Any) -> Any:
-        """Recursively resolve Jinja2 templates in a canvas widget tree.
+    async def _async_pre_resolve_canvas(self) -> None:
+        """Pre-resolve Jinja2 templates for all canvas widgets.
 
-        Strings containing ``{{...}}`` are rendered via HA's template engine.
+        Must run in the async context (``await``-safe). Templates compiled by
+        HA's Jinja2 environment require access to the event loop; calling
+        ``Template.render()`` from an executor thread is fragile.
         """
+        self._canvas_template_cache.clear()
+        for layout in self._layouts:
+            for slot in layout.slots:
+                widget = slot.widget
+                if not isinstance(widget, CanvasWidget):
+                    continue
+                tree = widget._raw_children  # noqa: SLF001
+                if tree:
+                    resolved = await self._async_resolve_canvas_tree(tree)
+                    self._canvas_template_cache[id(widget)] = resolved
+
+    async def _async_resolve_canvas_tree(self, node: Any) -> Any:
+        """Recursively resolve Jinja2 templates in a canvas widget tree."""
         if isinstance(node, dict):
-            return {k: self._resolve_canvas_templates(v) for k, v in node.items()}
+            return {k: await self._async_resolve_canvas_tree(v) for k, v in node.items()}
         if isinstance(node, list):
-            return [self._resolve_canvas_templates(item) for item in node]
+            return [await self._async_resolve_canvas_tree(item) for item in node]
         if isinstance(node, str) and "{{" in node:
             try:
                 from homeassistant.helpers.template import Template
 
-                return Template(node, self.hass).render()
+                return await Template(node, self.hass).async_render()
             except Exception:
                 return node
         return node
@@ -1140,6 +1144,9 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             await self._async_fetch_chart_history()
             await self._async_fetch_candlestick_history()
             await self._async_fetch_weather_forecasts()
+
+            # Pre-resolve canvas widget templates (must happen in async context)
+            await self._async_pre_resolve_canvas()
 
             # Render image in executor to avoid blocking the event loop
             # (Pillow image operations are CPU-intensive)
