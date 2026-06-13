@@ -845,7 +845,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             try:
                 from homeassistant.helpers.template import Template
 
-                result = await Template(node, self.hass).async_render()
+                result = Template(node, self.hass).async_render()
                 _LOGGER.debug(
                     "Canvas template resolved: %s -> %s",
                     node[:60],
