@@ -193,8 +193,10 @@ def _handle_arc(node: dict, ctx: RenderContext, state: WidgetState) -> Component
 
 
 def _handle_sparkline(node: dict, ctx: RenderContext, state: WidgetState) -> Component:
+    raw = node.get("data", [])
+    data = [_safe_float(v) for v in raw] if isinstance(raw, (list, tuple)) else []
     return Sparkline(
-        data=list(node.get("data", [])),
+        data=data,
         color=_resolve_color(node.get("color", "primary")) or THEME_PRIMARY,
         fill=bool(node.get("fill", True)),
         smooth=bool(node.get("smooth", True)),
