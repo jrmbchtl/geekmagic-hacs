@@ -1565,15 +1565,13 @@ export class GeekMagicPanel extends LitElement {
       case "longtext":
         return html`
           <div class="option-field">
-            <ha-selector
-              .hass=${this.hass}
-              .selector=${{ text: { multiline: true } }}
+            <ha-code-editor
               .value=${value || ""}
+              mode="yaml"
               .label=${opt.label}
-              .placeholder=${opt.placeholder || ""}
               @value-changed=${(e: CustomEvent) =>
                 this._updateWidgetOption(slot, opt.key, e.detail.value)}
-            ></ha-selector>
+            ></ha-code-editor>
           </div>
         `;
 

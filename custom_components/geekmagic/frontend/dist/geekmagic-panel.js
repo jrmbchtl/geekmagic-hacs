@@ -1277,14 +1277,12 @@ let u = class extends O {
       case "longtext":
         return c`
           <div class="option-field">
-            <ha-selector
-              .hass=${this.hass}
-              .selector=${{ text: { multiline: !0 } }}
+            <ha-code-editor
               .value=${i || ""}
+              mode="yaml"
               .label=${t.label}
-              .placeholder=${t.placeholder || ""}
               @value-changed=${(o) => this._updateWidgetOption(s, t.key, o.detail.value)}
-            ></ha-selector>
+            ></ha-code-editor>
           </div>
         `;
       case "icon":
