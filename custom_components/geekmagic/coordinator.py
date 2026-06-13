@@ -822,8 +822,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
     def _resolve_canvas_templates(self, node: Any) -> Any:
         """Recursively resolve Jinja2 templates in a canvas widget tree.
 
-        Runs in the async context where ``hass.states`` is safe. Strings
-        containing ``{{...}}`` are rendered via HA's template engine.
+        Strings containing ``{{...}}`` are rendered via HA's template engine.
         """
         if isinstance(node, dict):
             return {k: self._resolve_canvas_templates(v) for k, v in node.items()}
@@ -833,7 +832,7 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
             try:
                 from homeassistant.helpers.template import Template
 
-                return Template(node, self.hass).async_render()
+                return Template(node, self.hass).render()
             except Exception:
                 return node
         return node
