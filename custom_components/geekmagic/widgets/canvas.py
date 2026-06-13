@@ -380,8 +380,8 @@ class CanvasWidget(Widget):
         """Initialize the canvas widget."""
         super().__init__(config)
         raw = config.options.get("children", [])
-        self._raw_yaml: str | None = raw if isinstance(raw, str) else None
         if isinstance(raw, str):
+            self._raw_yaml = raw
             try:
                 parsed = yaml.safe_load(raw)
             except yaml.YAMLError:
@@ -393,8 +393,12 @@ class CanvasWidget(Widget):
                 self._raw_children = extracted if isinstance(extracted, list) else []
             else:
                 self._raw_children = []
-        else:
+        elif isinstance(raw, list):
             self._raw_children = raw
+            self._raw_yaml = yaml.dump(raw)
+        else:
+            self._raw_children = []
+            self._raw_yaml = None
 
     def render(self, ctx: RenderContext, state: WidgetState) -> Component:
         """Render the canvas widget."""

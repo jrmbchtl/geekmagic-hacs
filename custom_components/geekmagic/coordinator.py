@@ -858,8 +858,17 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
 
             processed = await Template(raw_yaml, self.hass).async_render()
         except Exception as exc:
-            _LOGGER.warning("Canvas raw template pre-process failed: %s", exc)
+            _LOGGER.warning(
+                "Canvas raw template pre-process failed (%s): %s",
+                type(exc).__name__,
+                exc,
+            )
             return None
+        _LOGGER.debug(
+            "Canvas raw template pre-process OK (%d chars -> %d chars)",
+            len(raw_yaml),
+            len(processed),
+        )
         parsed = yaml.safe_load(processed)
         if isinstance(parsed, list):
             return parsed
