@@ -580,7 +580,7 @@ async def ws_preview_render(
             return {k: await _async_resolve_canvas_preview(v, hass) for k, v in node.items()}
         if isinstance(node, list):
             return [await _async_resolve_canvas_preview(item, hass) for item in node]
-        if isinstance(node, str) and "{{" in node:
+        if isinstance(node, str) and ("{{" in node or "{%" in node):
             try:
                 from homeassistant.helpers.template import Template
 
@@ -594,6 +594,14 @@ async def ws_preview_render(
             slot = widget_data.get("slot", 0)
             raw = widget_data.get("options", {}).get("children", [])
             if isinstance(raw, str):
+                # Pre-process raw YAML as a whole Jinja2 template before
+                # YAML parsing, enabling {% macro %}, {% for %}, etc.
+                try:
+                    from homeassistant.helpers.template import Template
+
+                    raw = await Template(raw, hass).async_render()
+                except Exception:
+                    _LOGGER.debug("Canvas YAML pre-process failed, treating as raw YAML")
                 try:
                     parsed = yaml.safe_load(raw)
                 except yaml.YAMLError:

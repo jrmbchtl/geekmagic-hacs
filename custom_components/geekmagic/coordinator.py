@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+import yaml
+
 if TYPE_CHECKING:
     import asyncio
 
@@ -826,6 +828,17 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
                 widget = slot.widget
                 if not isinstance(widget, CanvasWidget):
                     continue
+
+                # Pre-process raw YAML through Jinja2 as a whole template,
+                # enabling {% macro %}, {% for %}, and file-level {% set %}
+                raw_yaml: str | None = getattr(widget, "_raw_yaml", None)
+                if raw_yaml:
+                    resolved = await self._async_resolve_raw_canvas(raw_yaml)
+                    if resolved is not None:
+                        self._canvas_template_cache[id(widget)] = resolved
+                        count += 1
+                        continue
+
                 tree = widget._raw_children  # noqa: SLF001
                 if tree:
                     count += 1
@@ -834,13 +847,34 @@ class GeekMagicCoordinator(DataUpdateCoordinator):
         if count:
             _LOGGER.debug("Pre-resolved canvas templates for %d widget(s)", count)
 
+    async def _async_resolve_raw_canvas(self, raw_yaml: str) -> list[dict] | None:
+        """Pre-process raw canvas YAML as a Jinja2 template before YAML parsing.
+
+        This enables {% macro %}, {% for %}, and file-level {% set %}
+        which are expanded before YAML parsing.
+        """
+        try:
+            from homeassistant.helpers.template import Template
+
+            processed = await Template(raw_yaml, self.hass).async_render()
+        except Exception as exc:
+            _LOGGER.warning("Canvas raw template pre-process failed: %s", exc)
+            return None
+        parsed = yaml.safe_load(processed)
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and "children" in parsed:
+            extracted = parsed["children"]
+            return extracted if isinstance(extracted, list) else None
+        return None
+
     async def _async_resolve_canvas_tree(self, node: Any) -> Any:
         """Recursively resolve Jinja2 templates in a canvas widget tree."""
         if isinstance(node, dict):
             return {k: await self._async_resolve_canvas_tree(v) for k, v in node.items()}
         if isinstance(node, list):
             return [await self._async_resolve_canvas_tree(item) for item in node]
-        if isinstance(node, str) and "{{" in node:
+        if isinstance(node, str) and ("{{" in node or "{%" in node):
             _LOGGER.debug("Canvas template string: %s", node[:120])
             try:
                 from homeassistant.helpers.template import Template

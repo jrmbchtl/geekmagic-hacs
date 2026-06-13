@@ -380,6 +380,7 @@ class CanvasWidget(Widget):
         """Initialize the canvas widget."""
         super().__init__(config)
         raw = config.options.get("children", [])
+        self._raw_yaml: str | None = raw if isinstance(raw, str) else None
         if isinstance(raw, str):
             try:
                 parsed = yaml.safe_load(raw)
